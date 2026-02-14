@@ -1,5 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import type { Database } from "@/types/supabase/databaseTypes";
+
+type TasterInsert = Database["public"]["Tables"]["tasters"]["Insert"];
 
 export async function POST(request: Request) {
   try {
@@ -20,13 +23,15 @@ export async function POST(request: Request) {
     }
 
     // Create new taster
+    const tasterData: TasterInsert = {
+      name: body.name,
+      email: body.email || null,
+      profile_image_url: body.profile_image_url || null,
+    };
+
     const { data, error } = await supabase
       .from("tasters")
-      .insert({
-        name: body.name,
-        email: body.email || null,
-        profile_image_url: body.profile_image_url || null,
-      })
+      .insert(tasterData as any)
       .select()
       .single();
 

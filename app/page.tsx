@@ -3,6 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import Image from "next/image";
+import type { Database } from "@/types/supabase/databaseTypes";
+
+type SakeAverage = Database["public"]["Views"]["sake_averages"]["Row"];
 
 export default async function Home() {
   const supabase = await createClient();
@@ -40,7 +43,7 @@ export default async function Home() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {sakes.map((sake) => (
+          {sakes.map((sake: SakeAverage) => (
             <Link key={sake.id} href={`/sake/${sake.id}`}>
               <Card className="hover:border-primary transition-colors cursor-pointer h-full">
                 <CardHeader>

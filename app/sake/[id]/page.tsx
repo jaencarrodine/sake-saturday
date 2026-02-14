@@ -5,10 +5,13 @@ import { Separator } from "@/components/ui/separator";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
+import type { Database } from "@/types/supabase/databaseTypes";
 
 type Props = {
   params: Promise<{ id: string }>;
 };
+
+type SakeRow = Database["public"]["Tables"]["sakes"]["Row"];
 
 export default async function SakePage({ params }: Props) {
   const { id } = await params;
@@ -24,6 +27,8 @@ export default async function SakePage({ params }: Props) {
   if (sakeError || !sake) {
     notFound();
   }
+
+  const sakeRow = sake as SakeRow;
 
   // Fetch all tastings for this sake with scores
   const { data: tastings } = await supabase
@@ -42,9 +47,9 @@ export default async function SakePage({ params }: Props) {
     .order("created_at", { ascending: false });
 
   // Calculate average score
-  const allScores = tastings?.flatMap((t) => t.tasting_scores.map((s: any) => s.score)) || [];
+  const allScores = tastings?.flatMap((t: any) => t.tasting_scores.map((s: any) => s.score)) || [];
   const avgScore = allScores.length > 0 
-    ? (allScores.reduce((a, b) => a + b, 0) / allScores.length).toFixed(1)
+    ? (allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length).toFixed(1)
     : "—";
 
   return (
@@ -53,11 +58,11 @@ export default async function SakePage({ params }: Props) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
           {/* Image Section */}
           <div className="md:col-span-1">
-            {sake.front_image_url ? (
+            {sakeRow.front_image_url ? (
               <div className="relative w-full aspect-[3/4] bg-muted rounded-lg overflow-hidden">
                 <Image
-                  src={sake.front_image_url}
-                  alt={sake.name}
+                  src={sakeRow.front_image_url}
+                  alt={sakeRow.name}
                   fill
                   className="object-cover"
                 />
@@ -72,9 +77,9 @@ export default async function SakePage({ params }: Props) {
           {/* Details Section */}
           <div className="md:col-span-2 space-y-6">
             <div>
-              <h1 className="text-4xl font-bold mb-2">{sake.name}</h1>
-              {sake.brewery && (
-                <p className="text-xl text-muted-foreground">{sake.brewery}</p>
+              <h1 className="text-4xl font-bold mb-2">{sakeRow.name}</h1>
+              {sakeRow.brewery && (
+                <p className="text-xl text-muted-foreground">{sakeRow.brewery}</p>
               )}
             </div>
 
@@ -104,55 +109,55 @@ export default async function SakePage({ params }: Props) {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-2 gap-4">
-                  {sake.prefecture && (
+                  {sakeRow.prefecture && (
                     <div>
                       <p className="text-sm text-muted-foreground">Prefecture</p>
-                      <p className="font-medium">{sake.prefecture}</p>
+                      <p className="font-medium">{sakeRow.prefecture}</p>
                     </div>
                   )}
-                  {sake.grade && (
+                  {sakeRow.grade && (
                     <div>
                       <p className="text-sm text-muted-foreground">Grade</p>
-                      <p className="font-medium">{sake.grade}</p>
+                      <p className="font-medium">{sakeRow.grade}</p>
                     </div>
                   )}
-                  {sake.type && (
+                  {sakeRow.type && (
                     <div>
                       <p className="text-sm text-muted-foreground">Type</p>
-                      <Badge>{sake.type}</Badge>
+                      <Badge>{sakeRow.type}</Badge>
                     </div>
                   )}
-                  {sake.alc_pct && (
+                  {sakeRow.alc_pct && (
                     <div>
                       <p className="text-sm text-muted-foreground">Alcohol</p>
-                      <p className="font-medium">{sake.alc_pct}%</p>
+                      <p className="font-medium">{sakeRow.alc_pct}%</p>
                     </div>
                   )}
-                  {sake.smv !== null && (
+                  {sakeRow.smv !== null && (
                     <div>
                       <p className="text-sm text-muted-foreground">SMV</p>
-                      <p className="font-medium">{sake.smv}</p>
+                      <p className="font-medium">{sakeRow.smv}</p>
                     </div>
                   )}
-                  {sake.rice && (
+                  {sakeRow.rice && (
                     <div>
                       <p className="text-sm text-muted-foreground">Rice</p>
-                      <p className="font-medium">{sake.rice}</p>
+                      <p className="font-medium">{sakeRow.rice}</p>
                     </div>
                   )}
-                  {sake.polishing_ratio && (
+                  {sakeRow.polishing_ratio && (
                     <div>
                       <p className="text-sm text-muted-foreground">Polishing Ratio</p>
-                      <p className="font-medium">{sake.polishing_ratio}%</p>
+                      <p className="font-medium">{sakeRow.polishing_ratio}%</p>
                     </div>
                   )}
                 </div>
-                {sake.profile && (
+                {sakeRow.profile && (
                   <>
                     <Separator className="my-4" />
                     <div>
                       <p className="text-sm text-muted-foreground mb-2">Profile</p>
-                      <p className="text-sm">{sake.profile}</p>
+                      <p className="text-sm">{sakeRow.profile}</p>
                     </div>
                   </>
                 )}

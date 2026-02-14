@@ -41,8 +41,11 @@ export default async function TastingPage({ params }: Props) {
     notFound();
   }
 
+  // Type the tasting data
+  const tastingData = tasting as any;
+
   // Calculate average score
-  const scores = tasting.tasting_scores.map((s: any) => s.score);
+  const scores = tastingData.tasting_scores.map((s: any) => s.score);
   const avgScore = scores.length > 0
     ? (scores.reduce((a: number, b: number) => a + b, 0) / scores.length).toFixed(1)
     : "—";
@@ -57,11 +60,11 @@ export default async function TastingPage({ params }: Props) {
           </Link>
           <h1 className="text-4xl font-bold mb-2">Tasting Session</h1>
           <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            <span>{new Date(tasting.date).toLocaleDateString()}</span>
-            {tasting.location_name && (
+            <span>{new Date(tastingData.date).toLocaleDateString()}</span>
+            {tastingData.location_name && (
               <>
                 <span>•</span>
-                <span>{tasting.location_name}</span>
+                <span>{tastingData.location_name}</span>
               </>
             )}
           </div>
@@ -71,12 +74,12 @@ export default async function TastingPage({ params }: Props) {
         <Card>
           <CardContent className="pt-6">
             <div className="flex gap-6">
-              <Link href={`/sake/${tasting.sakes.id}`} className="flex-shrink-0">
-                {tasting.sakes.front_image_url ? (
+              <Link href={`/sake/${tastingData.sakes.id}`} className="flex-shrink-0">
+                {tastingData.sakes.front_image_url ? (
                   <div className="relative w-32 h-40 bg-muted rounded-lg overflow-hidden hover:opacity-80 transition-opacity">
                     <Image
-                      src={tasting.sakes.front_image_url}
-                      alt={tasting.sakes.name}
+                      src={tastingData.sakes.front_image_url}
+                      alt={tastingData.sakes.name}
                       fill
                       className="object-cover"
                     />
@@ -88,25 +91,25 @@ export default async function TastingPage({ params }: Props) {
                 )}
               </Link>
               <div className="flex-1">
-                <Link href={`/sake/${tasting.sakes.id}`}>
+                <Link href={`/sake/${tastingData.sakes.id}`}>
                   <h2 className="text-2xl font-bold mb-1 hover:text-primary transition-colors">
-                    {tasting.sakes.name}
+                    {tastingData.sakes.name}
                   </h2>
                 </Link>
-                {tasting.sakes.brewery && (
-                  <p className="text-muted-foreground mb-3">{tasting.sakes.brewery}</p>
+                {tastingData.sakes.brewery && (
+                  <p className="text-muted-foreground mb-3">{tastingData.sakes.brewery}</p>
                 )}
                 <div className="flex flex-wrap gap-2 mb-4">
-                  {tasting.sakes.type && <Badge>{tasting.sakes.type}</Badge>}
-                  {tasting.sakes.prefecture && (
-                    <Badge variant="outline">{tasting.sakes.prefecture}</Badge>
+                  {tastingData.sakes.type && <Badge>{tastingData.sakes.type}</Badge>}
+                  {tastingData.sakes.prefecture && (
+                    <Badge variant="outline">{tastingData.sakes.prefecture}</Badge>
                   )}
-                  {tasting.sakes.grade && (
-                    <Badge variant="outline">{tasting.sakes.grade}</Badge>
+                  {tastingData.sakes.grade && (
+                    <Badge variant="outline">{tastingData.sakes.grade}</Badge>
                   )}
                 </div>
-                {tasting.sakes.profile && (
-                  <p className="text-sm text-muted-foreground">{tasting.sakes.profile}</p>
+                {tastingData.sakes.profile && (
+                  <p className="text-sm text-muted-foreground">{tastingData.sakes.profile}</p>
                 )}
               </div>
               <div className="text-right">
@@ -121,13 +124,13 @@ export default async function TastingPage({ params }: Props) {
         </Card>
 
         {/* Tasting Notes */}
-        {tasting.notes && (
+        {tastingData.notes && (
           <Card>
             <CardHeader>
               <CardTitle>Session Notes</CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm">{tasting.notes}</p>
+              <p className="text-sm">{tastingData.notes}</p>
             </CardContent>
           </Card>
         )}
@@ -136,7 +139,7 @@ export default async function TastingPage({ params }: Props) {
         <div>
           <h2 className="text-2xl font-bold mb-4">Individual Ratings</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {tasting.tasting_scores.map((score: any) => (
+            {tastingData.tasting_scores.map((score: any) => (
               <Card key={score.id}>
                 <CardContent className="pt-6">
                   <div className="flex items-start gap-4">

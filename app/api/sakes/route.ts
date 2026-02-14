@@ -1,29 +1,34 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import type { Database } from "@/types/supabase/databaseTypes";
+
+type SakeInsert = Database["public"]["Tables"]["sakes"]["Insert"];
 
 export async function POST(request: Request) {
   try {
     const supabase = await createClient();
     const body = await request.json();
 
+    const sakeData: SakeInsert = {
+      name: body.name,
+      brewery: body.brewery || null,
+      prefecture: body.prefecture || null,
+      grade: body.grade || null,
+      type: body.type || null,
+      alc_pct: body.alc_pct ? parseFloat(body.alc_pct) : null,
+      smv: body.smv ? parseFloat(body.smv) : null,
+      rice: body.rice || null,
+      polishing_ratio: body.polishing_ratio ? parseFloat(body.polishing_ratio) : null,
+      opacity: body.opacity || null,
+      profile: body.profile || null,
+      serving_temp: body.serving_temp || null,
+      front_image_url: body.front_image_url || null,
+      back_image_url: body.back_image_url || null,
+    };
+
     const { data, error } = await supabase
       .from("sakes")
-      .insert({
-        name: body.name,
-        brewery: body.brewery || null,
-        prefecture: body.prefecture || null,
-        grade: body.grade || null,
-        type: body.type || null,
-        alc_pct: body.alc_pct ? parseFloat(body.alc_pct) : null,
-        smv: body.smv ? parseFloat(body.smv) : null,
-        rice: body.rice || null,
-        polishing_ratio: body.polishing_ratio ? parseFloat(body.polishing_ratio) : null,
-        opacity: body.opacity || null,
-        profile: body.profile || null,
-        serving_temp: body.serving_temp || null,
-        front_image_url: body.front_image_url || null,
-        back_image_url: body.back_image_url || null,
-      })
+      .insert(sakeData as any)
       .select()
       .single();
 
