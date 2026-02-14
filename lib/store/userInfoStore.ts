@@ -1,15 +1,21 @@
 import { Session } from '@supabase/supabase-js';
 import { create } from 'zustand';
 import { mountStoreDevtool } from 'simple-zustand-devtools';
-import { Tables } from '@/types';
 
 type LoadingStatus = 'loading' | 'loaded' | 'error';
+
+// TODO: Add proper user type when auth is implemented
+type User = {
+	id: string;
+	email: string;
+	created_at: string;
+};
 
 type UserInfoStore = {
 	session: Session | null;
 	setSession: (session: Session | null) => void;
-	user: Tables<'users'> | null;
-	setUser: (user: Tables<'users'> | null) => void;
+	user: User | null;
+	setUser: (user: User | null) => void;
 	status: LoadingStatus;
 	setStatus: (status: LoadingStatus) => void;
 	error: Error | null;

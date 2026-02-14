@@ -1,5 +1,13 @@
 'use client';
 
+// TODO: Re-enable when auth is implemented
+// For MVP, this is a no-op provider
+export default function UserInfoProvider() {
+	// Auth disabled for MVP
+	return null;
+}
+
+/*
 import React, { useCallback, useEffect, useRef } from 'react';
 import { type Session } from '@supabase/supabase-js';
 
@@ -8,7 +16,7 @@ import { Tables } from '@/types'
 import { userInfoStore } from '@/lib/store/userInfoStore';
 import { createClient } from '@/lib/supabase/client';
 
-export default function UserInfoProvider() {
+export default function UserInfoProviderOriginal() {
 	const { setSession, setUser, setStatus, setError } = userInfoStore();
 	const session = userInfoStore((state) => state.session);
 	const supabase = createClient();
@@ -310,3 +318,4 @@ export default function UserInfoProvider() {
 
 	return <></>;
 }
+*/
