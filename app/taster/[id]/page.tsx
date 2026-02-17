@@ -8,21 +8,14 @@ import BlockGauge from '@/components/DataDisplay/BlockGauge';
 import NumberScramble from '@/components/DataDisplay/NumberScramble';
 import { notFound } from 'next/navigation';
 import { useTasterDetail } from '@/hooks/useTasterDetail';
-import { useMemo } from 'react';
+import { use } from 'react';
 
 type RouteParams = {
 	params: Promise<{ id: string }>;
 };
 
 export default function TasterPage({ params }: RouteParams) {
-	const unwrappedParams = useMemo(() => {
-		if (params instanceof Promise) {
-			throw params;
-		}
-		return params;
-	}, [params]);
-	
-	const { id } = unwrappedParams;
+	const { id } = use(params);
 	const { data, isLoading, error } = useTasterDetail(id);
 
 	if (error || (!isLoading && !data?.taster)) {
