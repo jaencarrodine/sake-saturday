@@ -74,7 +74,7 @@ export default function TasterPage({ params }: RouteParams) {
 		<Frame title={`【 TASTER PROFILE 利酒師 】`}>
 			<div className="space-y-6">
 				{/* Navigation */}
-				<div className="text-cyan hover:text-primary-highlight transition-colors">
+				<div className="text-sake-gold hover:text-primary-highlight transition-colors">
 					<Link href="/">← BACK TO HOME</Link>
 				</div>
 
@@ -128,7 +128,7 @@ export default function TasterPage({ params }: RouteParams) {
 						<GridArea title="tatistics" titleJa="統計" highlight="S">
 							<div className="grid grid-cols-2 gap-4">
 								<div className="text-center">
-									<div className="text-3xl text-cyan">
+									<div className="text-3xl text-sake-gold">
 										<NumberScramble value={scores?.length || 0} decimals={0} isLoading={isLoading} />
 									</div>
 									<div className="text-muted text-sm mt-1">SCORES</div>
@@ -163,11 +163,11 @@ export default function TasterPage({ params }: RouteParams) {
 							<GridArea title="ost Tasted" titleJa="最多試飲" highlight="M">
 								<Link
 									href={`/sake/${favoriteSake.id}`}
-									className="block hover:text-cyan transition-colors"
+									className="block hover:text-primary-highlight transition-colors"
 								>
 									<div className="space-y-2">
 										<div className="text-sake-gold text-lg">{favoriteSake.name}</div>
-										<div className="text-cyan text-sm">→ VIEW SAKE DETAILS</div>
+										<div className="text-neon-pink text-sm">→ VIEW SAKE DETAILS</div>
 									</div>
 								</Link>
 							</GridArea>
@@ -199,7 +199,7 @@ export default function TasterPage({ params }: RouteParams) {
 														{sake && (
 															<Link
 																href={`/sake/${sake.id}`}
-																className="text-white text-lg hover:text-cyan transition-colors truncate block"
+																className="text-white text-lg hover:text-primary-highlight transition-colors truncate block"
 															>
 																{sake.name}
 															</Link>
@@ -207,7 +207,7 @@ export default function TasterPage({ params }: RouteParams) {
 														{tastingDate && (
 															<Link
 																href={`/tasting/${score.tasting_id}`}
-																className="text-muted text-sm hover:text-cyan transition-colors mt-1 block"
+																className="text-muted text-sm hover:text-primary-highlight transition-colors mt-1 block"
 															>
 																{tastingDate}
 															</Link>

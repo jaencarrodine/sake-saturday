@@ -9,12 +9,14 @@ import { useSakeRankings } from '@/hooks/useSakeRankings';
 import { useTasterLeaderboard } from '@/hooks/useTasterLeaderboard';
 import { useRecentTastings } from '@/hooks/useRecentTastings';
 import { useTastingScores } from '@/hooks/useTastingScores';
+import { useStats } from '@/hooks/useStats';
 import { useMemo } from 'react';
 
 export default function Home() {
-	const { data: sakes, isLoading: sakesLoading } = useSakeRankings(8);
+	const { data: sakes, isLoading: sakesLoading } = useSakeRankings();
 	const { data: tasterLeaderboard, isLoading: tastersLoading } = useTasterLeaderboard(8);
 	const { data: tastings, isLoading: tastingsLoading } = useRecentTastings(6);
+	const { data: stats, isLoading: statsLoading } = useStats();
 	
 	const tastingIds = useMemo(() => tastings?.map((t: any) => t.id) || [], [tastings]);
 	const { data: tastingScores = [] } = useTastingScores(tastingIds);
@@ -46,12 +48,12 @@ export default function Home() {
 		}) || [];
 	}, [tastings, tastingScores]);
 
-	// Calculate total stats
-	const totalSakes = sakes?.length || 0;
-	const totalTasters = tasterLeaderboard?.length || 0;
-	const totalTastings = tastingsWithScores.length;
+	// Get stats from dedicated query
+	const totalSakes = stats?.sakeCount || 0;
+	const totalTasters = stats?.tasterCount || 0;
+	const totalTastings = stats?.tastingCount || 0;
 	
-	const isLoading = sakesLoading || tastersLoading || tastingsLoading;
+	const isLoading = sakesLoading || tastersLoading || tastingsLoading || statsLoading;
 
 	// Helper function to get score label
 	const getScoreLabel = (score: number) => {
@@ -89,7 +91,11 @@ export default function Home() {
 												</div>
 											</div>
 											<div className="flex flex-col items-end gap-1">
-												<div className="text-lg text-cyan">
+												<div className={`text-lg ${
+													(sake.avg_score || 0) >= 8 ? 'text-green' :
+													(sake.avg_score || 0) >= 7 ? 'text-sake-gold' :
+													'text-white'
+												}`}>
 													{sake.avg_score?.toFixed(1) || "N/A"}
 												</div>
 												<BlockGauge value={(sake.avg_score || 0) / 10} blockLength={10} />
@@ -124,7 +130,7 @@ export default function Home() {
 								<div className="text-muted text-sm mt-1">TASTINGS</div>
 							</div>
 							<div>
-								<div className="text-3xl text-cyan">
+								<div className="text-3xl text-white">
 									<NumberScramble value={totalTasters} decimals={0} isLoading={isLoading} />
 								</div>
 								<div className="text-muted text-sm mt-1">TASTERS</div>
@@ -143,17 +149,19 @@ export default function Home() {
 										className="flex items-center justify-between text-sm hover:text-primary-highlight transition-colors"
 									>
 										<div className="flex items-center gap-2 flex-1 min-w-0">
-											<span className="text-muted w-6">{index + 1}.</span>
+											<span className="text-primary-highlight">&gt;</span>
 											<span className="text-white truncate">{taster.name}</span>
 										</div>
 										<div className="flex items-center gap-2">
-											<span className="text-dots">............</span>
-											<span className={`text-lg w-12 text-right ${
+											<span className="text-dots">...........</span>
+											<span className="text-neon-pink">{taster.tastings_count || 0} tastings</span>
+											<span className="text-dots">..</span>
+											<span className={`text-lg ${
 												taster.avg_score_given >= 8 ? 'text-green' :
 												taster.avg_score_given >= 7 ? 'text-sake-gold' :
 												'text-white'
 											}`}>
-												{taster.avg_score_given?.toFixed(1) || "N/A"}
+												avg: {taster.avg_score_given?.toFixed(1) || "N/A"}
 											</span>
 										</div>
 									</Link>
@@ -188,7 +196,7 @@ export default function Home() {
 										>
 											<div className="space-y-2">
 												<div className="flex items-start justify-between">
-													<div className="text-cyan text-sm">{formattedDate}</div>
+													<div className="text-muted text-sm">{formattedDate}</div>
 													{tasting.average_score && (
 														<div className="text-white text-lg">
 															{tasting.average_score.toFixed(1)}

@@ -68,7 +68,7 @@ export default function SakePage({ params }: RouteParams) {
 		<Frame title={`【 ${sake.name} 】`}>
 			<div className="space-y-6">
 				{/* Navigation */}
-				<div className="text-cyan hover:text-primary-highlight transition-colors">
+				<div className="text-sake-gold hover:text-primary-highlight transition-colors">
 					<Link href="/">← BACK TO HOME</Link>
 				</div>
 
@@ -176,7 +176,7 @@ export default function SakePage({ params }: RouteParams) {
 							<GridArea title="tatistics" titleJa="統計" highlight="S">
 								<div className="grid grid-cols-2 gap-4 text-center">
 									<div>
-										<div className="text-3xl text-cyan">
+										<div className="text-3xl text-sake-gold">
 											<NumberScramble value={tastings?.length || 0} decimals={0} isLoading={isLoading} />
 										</div>
 										<div className="text-muted text-sm mt-1">TASTINGS</div>
@@ -221,7 +221,7 @@ export default function SakePage({ params }: RouteParams) {
 											className="flex items-center justify-between py-2 border-b border-divider hover:border-primary-highlight transition-colors"
 										>
 											<div className="flex items-center gap-3">
-												<span className="text-cyan">&gt;</span>
+												<span className="text-primary-highlight">&gt;</span>
 												<span className="text-white">{score.tasters?.name}</span>
 											</div>
 											<div className="flex items-center gap-3">
@@ -264,7 +264,7 @@ export default function SakePage({ params }: RouteParams) {
 													<div>
 														<Link
 															href={`/tasting/${tasting.id}`}
-															className="text-cyan hover:text-primary-highlight transition-colors"
+															className="text-sake-gold hover:text-primary-highlight transition-colors"
 														>
 															{formattedDate}
 														</Link>
@@ -291,7 +291,7 @@ export default function SakePage({ params }: RouteParams) {
 														>
 															<Link
 																href={`/taster/${score.taster_id}`}
-																className="text-white hover:text-cyan transition-colors"
+																className="text-white hover:text-primary-highlight transition-colors"
 															>
 																{score.tasters?.name}
 															</Link>

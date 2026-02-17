@@ -10,7 +10,7 @@ export function useTasterLeaderboard(limit?: number) {
       let query = supabase
         .from("taster_leaderboard")
         .select("*")
-        .order("avg_score_given", { ascending: false, nullsFirst: false });
+        .order("tastings_count", { ascending: false, nullsFirst: false });
       
       if (limit) {
         query = query.limit(limit);

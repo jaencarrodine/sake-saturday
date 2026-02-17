@@ -57,7 +57,7 @@ export default function TastingPage({ params }: RouteParams) {
 		<Frame title={`【 TASTING SESSION 利酒会 】`}>
 			<div className="space-y-6">
 				{/* Navigation */}
-				<div className="text-cyan hover:text-primary-highlight transition-colors">
+				<div className="text-sake-gold hover:text-primary-highlight transition-colors">
 					<Link href="/">← BACK TO HOME</Link>
 				</div>
 
@@ -85,7 +85,7 @@ export default function TastingPage({ params }: RouteParams) {
 							<div className="space-y-4">
 								<div>
 									<div className="text-muted text-sm">DATE:</div>
-									<div className="text-cyan text-xl">{formattedDate}</div>
+									<div className="text-white text-xl">{formattedDate}</div>
 								</div>
 
 								{tasting.location_name && (
@@ -108,7 +108,7 @@ export default function TastingPage({ params }: RouteParams) {
 
 								<div className="border-t border-divider pt-4">
 									<div className="text-center">
-										<div className="text-3xl text-cyan">
+										<div className="text-3xl text-sake-gold">
 											<NumberScramble value={scores?.length || 0} decimals={0} isLoading={isLoading} />
 										</div>
 										<div className="text-muted text-sm mt-1">TOTAL SCORES</div>
@@ -123,7 +123,7 @@ export default function TastingPage({ params }: RouteParams) {
 								<GridArea title="ake Tasted" titleJa="試飲酒" highlight="S">
 									<Link
 										href={`/sake/${tasting.sakes.id}`}
-										className="block hover:text-cyan transition-colors"
+										className="block hover:text-primary-highlight transition-colors"
 									>
 										<div className="space-y-2">
 											<div className="text-sake-gold text-xl">{tasting.sakes.name}</div>
@@ -135,7 +135,7 @@ export default function TastingPage({ params }: RouteParams) {
 													{[tasting.sakes.type, tasting.sakes.grade].filter(Boolean).join(' • ')}
 												</div>
 											)}
-											<div className="text-cyan text-sm mt-2">→ VIEW SAKE DETAILS</div>
+											<div className="text-neon-pink text-sm mt-2">→ VIEW SAKE DETAILS</div>
 										</div>
 									</Link>
 								</GridArea>
@@ -157,7 +157,7 @@ export default function TastingPage({ params }: RouteParams) {
 											<div className="flex items-start justify-between mb-4">
 												<Link
 													href={`/taster/${score.taster_id}`}
-													className="flex items-center gap-3 hover:text-cyan transition-colors"
+													className="flex items-center gap-3 hover:text-primary-highlight transition-colors"
 												>
 													<span className="text-primary-highlight">&gt;</span>
 													<div>
