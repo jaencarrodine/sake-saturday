@@ -1,7 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
-import Image from 'next/image';
 import Link from 'next/link';
-import ScoreBadge from '@/components/ScoreBadge';
+import Frame from '@/components/Frame';
+import GridArea from '@/components/GridArea';
+import BlockGauge from '@/components/DataDisplay/BlockGauge';
+import NumberScramble from '@/components/DataDisplay/NumberScramble';
 import { notFound } from 'next/navigation';
 
 type RouteParams = {
@@ -76,233 +78,267 @@ export default async function SakePage({ params }: RouteParams) {
 		};
 	}) || [];
 
+	// Helper function to get score label
+	const getScoreLabel = (score: number) => {
+		if (score >= 9) return "LEGENDARY";
+		if (score >= 8) return "EXCELLENT";
+		if (score >= 7) return "GREAT";
+		if (score >= 6) return "GOOD";
+		if (score >= 5) return "DECENT";
+		return "FAIR";
+	};
+
 	return (
-		<div className="min-h-screen bg-gradient-to-b from-background to-zinc-950">
-			{/* Header */}
-			<header className="border-b border-zinc-800 bg-background/50 backdrop-blur-sm sticky top-0 z-10">
-				<div className="container mx-auto px-4 py-4">
-					<Link href="/" className="text-gold hover:text-gold/80 transition-colors">
-						← Back to Home
-					</Link>
+		<Frame title={`【 ${sake.name} 】`}>
+			<div className="space-y-6">
+				{/* Navigation */}
+				<div className="text-cyan hover:text-primary-highlight transition-colors">
+					<Link href="/">← BACK TO HOME</Link>
 				</div>
-			</header>
 
-			<main className="container mx-auto px-4 py-8">
-				<div className="grid lg:grid-cols-3 gap-8">
-					{/* Sidebar */}
-					<div className="lg:col-span-1">
-						<div className="sticky top-24 space-y-6">
-							{/* Sake Image */}
-							<div className="aspect-[3/4] relative bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-								<div className="w-full h-full flex items-center justify-center text-zinc-600">
-									<svg
-										className="w-24 h-24"
-										fill="none"
-										viewBox="0 0 24 24"
-										stroke="currentColor"
-									>
-										<path
-											strokeLinecap="round"
-											strokeLinejoin="round"
-											strokeWidth={1}
-											d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"
-										/>
-									</svg>
-								</div>
-							</div>
-
-							{/* Stats */}
-							<div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 space-y-4">
-								<h3 className="font-semibold text-lg">Statistics</h3>
-								<div className="space-y-3">
+				{/* Main Grid */}
+				<div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+					{/* Left Column - Sake Info */}
+					<div className="lg:col-span-4">
+						<GridArea title="ake Info" titleJa="酒情報" highlight="S">
+							<div className="space-y-4">
+								{/* Sake name with Japanese */}
+								<div>
+									<div className="text-2xl text-sake-gold mb-2">{sake.name}</div>
 									{averageScore !== null && (
-										<div>
-											<div className="text-sm text-muted-foreground mb-1">Average Score</div>
-											<ScoreBadge score={averageScore} size="lg" />
+										<div className="space-y-2">
+											<div className="flex items-center justify-between">
+												<span className="text-muted">SCORE:</span>
+												<span className="text-3xl text-neon-pink">{averageScore.toFixed(1)}</span>
+											</div>
+											<BlockGauge value={averageScore / 10} blockLength={15} />
+											<div className="text-right text-sm text-green">
+												{getScoreLabel(averageScore)}
+											</div>
 										</div>
 									)}
+								</div>
+
+								{/* Terminal-style key-value stats */}
+								<div className="space-y-1 text-sm font-mono border-t border-divider pt-4">
+									{sake.bottling_company && (
+										<div className="flex">
+											<span className="text-muted w-32">BREWERY:</span>
+											<span className="text-white">{sake.bottling_company}</span>
+										</div>
+									)}
+									{sake.prefecture && (
+										<div className="flex">
+											<span className="text-muted w-32">PREFECTURE:</span>
+											<span className="text-white">{sake.prefecture}</span>
+										</div>
+									)}
+									{sake.grade && (
+										<div className="flex">
+											<span className="text-muted w-32">GRADE:</span>
+											<span className="text-sake-gold">{sake.grade}</span>
+										</div>
+									)}
+									{sake.type && (
+										<div className="flex">
+											<span className="text-muted w-32">TYPE:</span>
+											<span className="text-white">{sake.type}</span>
+										</div>
+									)}
+									{sake.rice && (
+										<div className="flex">
+											<span className="text-muted w-32">RICE:</span>
+											<span className="text-white">{sake.rice}</span>
+										</div>
+									)}
+									{sake.polishing_ratio && (
+										<div className="flex">
+											<span className="text-muted w-32">POLISH:</span>
+											<span className="text-white">{sake.polishing_ratio}%</span>
+										</div>
+									)}
+									{sake.alc_percentage && (
+										<div className="flex">
+											<span className="text-muted w-32">ABV:</span>
+											<span className="text-white">{sake.alc_percentage}%</span>
+										</div>
+									)}
+									{sake.smv !== null && sake.smv !== undefined && (
+										<div className="flex">
+											<span className="text-muted w-32">SMV:</span>
+											<span className="text-white">{sake.smv > 0 ? '+' : ''}{sake.smv}</span>
+										</div>
+									)}
+									{sake.opacity && (
+										<div className="flex">
+											<span className="text-muted w-32">OPACITY:</span>
+											<span className="text-white">{sake.opacity}</span>
+										</div>
+									)}
+								</div>
+
+								{/* Profile */}
+								{sake.profile && (
+									<div className="border-t border-divider pt-4">
+										<div className="text-muted text-sm mb-2">PROFILE:</div>
+										<div className="text-white text-sm">{sake.profile}</div>
+									</div>
+								)}
+
+								{/* Serving temps */}
+								{sake.recommended_serving_temperatures && (
+									<div className="border-t border-divider pt-4">
+										<div className="text-muted text-sm mb-2">SERVING:</div>
+										<div className="text-white text-sm">{sake.recommended_serving_temperatures}</div>
+									</div>
+								)}
+							</div>
+						</GridArea>
+
+						{/* Statistics */}
+						<div className="mt-6">
+							<GridArea title="tatistics" titleJa="統計" highlight="S">
+								<div className="grid grid-cols-2 gap-4 text-center">
 									<div>
-										<div className="text-sm text-muted-foreground mb-1">Total Tastings</div>
-										<div className="text-2xl font-bold text-foreground">{tastings?.length || 0}</div>
+										<div className="text-3xl text-cyan">
+											<NumberScramble value={tastings?.length || 0} decimals={0} />
+										</div>
+										<div className="text-muted text-sm mt-1">TASTINGS</div>
 									</div>
 									<div>
-										<div className="text-sm text-muted-foreground mb-1">Total Scores</div>
-										<div className="text-2xl font-bold text-foreground">{scores.length}</div>
+										<div className="text-3xl text-neon-pink">
+											<NumberScramble value={scores.length} decimals={0} />
+										</div>
+										<div className="text-muted text-sm mt-1">SCORES</div>
 									</div>
 									{highestScore !== null && (
 										<div>
-											<div className="text-sm text-muted-foreground mb-1">Highest Score</div>
-											<div className="text-2xl font-bold text-green-400">{highestScore.toFixed(1)}</div>
+											<div className="text-3xl text-green">
+												<NumberScramble value={highestScore} decimals={1} />
+											</div>
+											<div className="text-muted text-sm mt-1">HIGHEST</div>
 										</div>
 									)}
 									{lowestScore !== null && (
 										<div>
-											<div className="text-sm text-muted-foreground mb-1">Lowest Score</div>
-											<div className="text-2xl font-bold text-red-400">{lowestScore.toFixed(1)}</div>
+											<div className="text-3xl text-red">
+												<NumberScramble value={lowestScore} decimals={1} />
+											</div>
+											<div className="text-muted text-sm mt-1">LOWEST</div>
 										</div>
 									)}
 								</div>
-							</div>
+							</GridArea>
 						</div>
 					</div>
 
-					{/* Main Content */}
-					<div className="lg:col-span-2 space-y-8">
-						{/* Sake Info */}
-						<div>
-							<h1 className="text-4xl font-bold text-foreground mb-2">{sake.name}</h1>
-
-							<div className="grid grid-cols-2 gap-4 mt-6">
-								{sake.bottling_company && (
-									<div>
-										<div className="text-sm text-muted-foreground">Bottling Company</div>
-										<div className="font-medium">{sake.bottling_company}</div>
-									</div>
-								)}
-								{sake.prefecture && (
-									<div>
-										<div className="text-sm text-muted-foreground">Prefecture</div>
-										<div className="font-medium">{sake.prefecture}</div>
-									</div>
-								)}
-								{sake.type && (
-									<div>
-										<div className="text-sm text-muted-foreground">Type</div>
-										<div className="font-medium">{sake.type}</div>
-									</div>
-								)}
-								{sake.grade && (
-									<div>
-										<div className="text-sm text-muted-foreground">Grade</div>
-										<div className="font-medium">{sake.grade}</div>
-									</div>
-								)}
-								{sake.rice && (
-									<div>
-										<div className="text-sm text-muted-foreground">Rice</div>
-										<div className="font-medium">{sake.rice}</div>
-									</div>
-								)}
-								{sake.polishing_ratio && (
-									<div>
-										<div className="text-sm text-muted-foreground">Polishing Ratio</div>
-										<div className="font-medium">{sake.polishing_ratio}%</div>
-									</div>
-								)}
-								{sake.alc_percentage && (
-									<div>
-										<div className="text-sm text-muted-foreground">Alcohol</div>
-										<div className="font-medium">{sake.alc_percentage}%</div>
-									</div>
-								)}
-								{sake.smv !== null && sake.smv !== undefined && (
-									<div>
-										<div className="text-sm text-muted-foreground">SMV</div>
-										<div className="font-medium">{sake.smv}</div>
-									</div>
-								)}
-								{sake.opacity && (
-									<div>
-										<div className="text-sm text-muted-foreground">Opacity</div>
-										<div className="font-medium">{sake.opacity}</div>
+					{/* Right Column - Taster Scores & Tastings */}
+					<div className="lg:col-span-8 space-y-6">
+						{/* Taster Scores */}
+						<GridArea title="aster Scores" titleJa="利酒師スコア" highlight="T">
+							<div className="space-y-2">
+								{scores.length > 0 ? (
+									scores.map((score: any) => (
+										<Link
+											key={score.id}
+											href={`/taster/${score.taster_id}`}
+											className="flex items-center justify-between py-2 border-b border-divider hover:border-primary-highlight transition-colors"
+										>
+											<div className="flex items-center gap-3">
+												<span className="text-cyan">&gt;</span>
+												<span className="text-white">{score.tasters?.name}</span>
+											</div>
+											<div className="flex items-center gap-3">
+												<BlockGauge value={score.score / 10} blockLength={10} />
+												<span className={`text-xl w-12 text-right ${
+													score.score >= 8 ? 'text-green' :
+													score.score >= 7 ? 'text-sake-gold' :
+													score.score >= 6 ? 'text-white' :
+													'text-red'
+												}`}>
+													{score.score.toFixed(1)}
+												</span>
+											</div>
+										</Link>
+									))
+								) : (
+									<div className="text-muted text-center py-8">
+										NO SCORES YET
 									</div>
 								)}
 							</div>
+						</GridArea>
 
-							{sake.profile && (
-								<div className="mt-6">
-									<div className="text-sm text-muted-foreground mb-2">Profile</div>
-									<div className="text-foreground">{sake.profile}</div>
-								</div>
-							)}
-
-							{sake.recommended_serving_temperatures && (
-								<div className="mt-4">
-									<div className="text-sm text-muted-foreground mb-2">Recommended Serving Temperatures</div>
-									<div className="text-foreground">{sake.recommended_serving_temperatures}</div>
-								</div>
-							)}
-						</div>
-
-						{/* Tastings */}
-						<div>
-							<h2 className="text-2xl font-bold text-foreground mb-4">All Tastings</h2>
-							{scoresByTasting.length > 0 ? (
-								<div className="space-y-6">
-									{scoresByTasting.map(({ tasting, scores: tastingScores, average_score }: any) => {
+						{/* All Tastings */}
+						<GridArea title="ll Tastings" titleJa="全利酒" highlight="A">
+							<div className="space-y-4">
+								{scoresByTasting.length > 0 ? (
+									scoresByTasting.map(({ tasting, scores: tastingScores, average_score }: any) => {
 										const tastingDate = new Date(tasting.date);
 										const formattedDate = tastingDate.toLocaleDateString('en-US', {
-											weekday: 'long',
+											weekday: 'short',
 											year: 'numeric',
-											month: 'long',
+											month: 'short',
 											day: 'numeric',
 										});
 
 										return (
-											<div key={tasting.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-												<div className="flex items-start justify-between mb-4">
+											<div key={tasting.id} className="border border-divider p-4">
+												<div className="flex items-start justify-between mb-3">
 													<div>
 														<Link
 															href={`/tasting/${tasting.id}`}
-															className="text-lg font-semibold text-gold hover:text-gold/80 transition-colors"
+															className="text-cyan hover:text-primary-highlight transition-colors"
 														>
 															{formattedDate}
 														</Link>
 														{tasting.location_name && (
-															<p className="text-sm text-muted-foreground mt-1">📍 {tasting.location_name}</p>
+															<div className="text-muted text-sm mt-1">
+																📍 {tasting.location_name}
+															</div>
 														)}
 													</div>
 													{average_score !== null && (
-														<ScoreBadge score={average_score} />
+														<div className="text-right">
+															<div className="text-2xl text-white">{average_score.toFixed(1)}</div>
+															<div className="text-sm text-muted">{getScoreLabel(average_score)}</div>
+														</div>
 													)}
 												</div>
 
-												{/* Scores */}
-												<div className="space-y-2">
-													<h4 className="text-sm font-semibold text-muted-foreground">Scores</h4>
+												{/* Taster scores for this tasting */}
+												<div className="space-y-1 text-sm">
 													{tastingScores.map((score: any) => (
 														<div
 															key={score.id}
-															className="flex items-center justify-between bg-zinc-800/50 rounded-lg p-3"
+															className="flex items-center justify-between py-1"
 														>
 															<Link
 																href={`/taster/${score.taster_id}`}
-																className="flex items-center gap-3 hover:text-gold transition-colors"
+																className="text-white hover:text-cyan transition-colors"
 															>
-																<div className="w-8 h-8 rounded-full overflow-hidden bg-zinc-700 flex-shrink-0">
-																	{score.tasters?.profile_pic ? (
-																		<Image
-																			src={score.tasters.profile_pic}
-																			alt={score.tasters.name}
-																			width={32}
-																			height={32}
-																			className="object-cover"
-																		/>
-																	) : (
-																		<div className="w-full h-full flex items-center justify-center text-zinc-500 text-xs font-semibold">
-																			{score.tasters?.name?.charAt(0).toUpperCase()}
-																		</div>
-																	)}
-																</div>
-																<span className="font-medium">{score.tasters?.name}</span>
+																{score.tasters?.name}
 															</Link>
-															<ScoreBadge score={score.score} size="sm" />
+															<div className="flex items-center gap-2">
+																<BlockGauge value={score.score / 10} blockLength={8} />
+																<span className="text-white w-8 text-right">{score.score.toFixed(1)}</span>
+															</div>
 														</div>
 													))}
 												</div>
 											</div>
 										);
-									})}
-								</div>
-							) : (
-								<div className="text-center py-12 bg-zinc-900 border border-zinc-800 rounded-xl">
-									<p className="text-muted-foreground">No tastings yet for this sake.</p>
-								</div>
-							)}
-						</div>
+									})
+								) : (
+									<div className="text-muted text-center py-8">
+										NO TASTINGS YET FOR THIS SAKE
+									</div>
+								)}
+							</div>
+						</GridArea>
 					</div>
 				</div>
-			</main>
-		</div>
+			</div>
+		</Frame>
 	);
 }
