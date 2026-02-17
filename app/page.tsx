@@ -1,85 +1,57 @@
-import { createClient } from '@/lib/supabase/server';
+'use client';
+
 import Frame from '@/components/Frame';
 import GridArea from '@/components/GridArea';
 import BlockGauge from '@/components/DataDisplay/BlockGauge';
 import NumberScramble from '@/components/DataDisplay/NumberScramble';
 import Link from 'next/link';
+import { useSakeRankings } from '@/hooks/useSakeRankings';
+import { useTasterLeaderboard } from '@/hooks/useTasterLeaderboard';
+import { useRecentTastings } from '@/hooks/useRecentTastings';
+import { useTastingScores } from '@/hooks/useTastingScores';
+import { useMemo } from 'react';
 
-export default async function Home() {
-	const supabase = await createClient();
-
-	// Fetch sake rankings
-	const { data: sakes } = await supabase
-		.from('sake_rankings')
-		.select('*')
-		.order('avg_score', { ascending: false, nullsFirst: false })
-		.limit(8);
-
-	// Fetch taster leaderboard
-	const { data: tasterLeaderboard } = await supabase
-		.from('taster_leaderboard')
-		.select('*')
-		.order('avg_score_given', { ascending: false, nullsFirst: false })
-		.limit(8);
-
-	// Fetch recent tastings
-	const { data: tastings } = await supabase
-		.from('tastings')
-		.select(`
-			id,
-			date,
-			location_name,
-			front_image,
-			sake_id,
-			sakes (
-				id,
-				name
-			)
-		`)
-		.order('date', { ascending: false })
-		.limit(6);
-
-	// Get scores for recent tastings
-	const tastingIds = tastings?.map((t: any) => t.id) || [];
-	let tastingScores: any[] = [];
+export default function Home() {
+	const { data: sakes, isLoading: sakesLoading } = useSakeRankings(8);
+	const { data: tasterLeaderboard, isLoading: tastersLoading } = useTasterLeaderboard(8);
+	const { data: tastings, isLoading: tastingsLoading } = useRecentTastings(6);
 	
-	if (tastingIds.length > 0) {
-		const { data } = await supabase
-			.from('scores')
-			.select('tasting_id, score')
-			.in('tasting_id', tastingIds);
-		tastingScores = data || [];
-	}
-
+	const tastingIds = useMemo(() => tastings?.map((t: any) => t.id) || [], [tastings]);
+	const { data: tastingScores = [] } = useTastingScores(tastingIds);
+	
 	// Calculate average scores for tastings
-	const tastingsWithScores = tastings?.map((tasting: {
-		id: string;
-		date: string;
-		location_name: string | null;
-		front_image: string | null;
-		sake_id: string;
-		sakes: { id: string; name: string } | null;
-	}) => {
-		const scores = tastingScores.filter((s: { tasting_id: string; score: number }) => s.tasting_id === tasting.id);
-		const averageScore = scores.length > 0
-			? scores.reduce((sum: number, s: { score: number }) => sum + s.score, 0) / scores.length
-			: undefined;
+	const tastingsWithScores = useMemo(() => {
+		return tastings?.map((tasting: {
+			id: string;
+			date: string;
+			location_name: string | null;
+			front_image: string | null;
+			sake_id: string;
+			sakes: { id: string; name: string } | null;
+		}) => {
+			const scores = tastingScores.filter((s: { tasting_id: string; score: number }) => s.tasting_id === tasting.id);
+			const averageScore = scores.length > 0
+				? scores.reduce((sum: number, s: { score: number }) => sum + s.score, 0) / scores.length
+				: undefined;
 
-		return {
-			...tasting,
-			sake: tasting.sakes ? {
-				id: tasting.sakes.id,
-				name: tasting.sakes.name,
-			} : undefined,
-			average_score: averageScore,
-			score_count: scores.length,
-		};
-	}) || [];
+			return {
+				...tasting,
+				sake: tasting.sakes ? {
+					id: tasting.sakes.id,
+					name: tasting.sakes.name,
+				} : undefined,
+				average_score: averageScore,
+				score_count: scores.length,
+			};
+		}) || [];
+	}, [tastings, tastingScores]);
 
 	// Calculate total stats
 	const totalSakes = sakes?.length || 0;
 	const totalTasters = tasterLeaderboard?.length || 0;
 	const totalTastings = tastingsWithScores.length;
+	
+	const isLoading = sakesLoading || tastersLoading || tastingsLoading;
 
 	// Helper function to get score label
 	const getScoreLabel = (score: number) => {
@@ -141,19 +113,19 @@ export default async function Home() {
 						<div className="grid grid-cols-3 gap-4 text-center">
 							<div>
 								<div className="text-3xl text-sake-gold">
-									<NumberScramble value={totalSakes} decimals={0} />
+									<NumberScramble value={totalSakes} decimals={0} isLoading={isLoading} />
 								</div>
 								<div className="text-muted text-sm mt-1">SAKES</div>
 							</div>
 							<div>
 								<div className="text-3xl text-neon-pink">
-									<NumberScramble value={totalTastings} decimals={0} />
+									<NumberScramble value={totalTastings} decimals={0} isLoading={isLoading} />
 								</div>
 								<div className="text-muted text-sm mt-1">TASTINGS</div>
 							</div>
 							<div>
 								<div className="text-3xl text-cyan">
-									<NumberScramble value={totalTasters} decimals={0} />
+									<NumberScramble value={totalTasters} decimals={0} isLoading={isLoading} />
 								</div>
 								<div className="text-muted text-sm mt-1">TASTERS</div>
 							</div>

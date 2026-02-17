@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { VT323, Noto_Sans_JP } from "next/font/google";
 import "./globals.css";
+import { Providers } from "@/lib/providers";
 
 const vt323 = VT323({
   weight: "400",
@@ -30,7 +31,7 @@ export default function RootLayout({
       <body
         className={`${vt323.className} ${notoSansJP.variable} antialiased`}
       >
-        {children}
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

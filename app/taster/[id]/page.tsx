@@ -1,4 +1,5 @@
-import { createClient } from '@/lib/supabase/server';
+'use client';
+
 import Image from 'next/image';
 import Link from 'next/link';
 import Frame from '@/components/Frame';
@@ -6,43 +7,30 @@ import GridArea from '@/components/GridArea';
 import BlockGauge from '@/components/DataDisplay/BlockGauge';
 import NumberScramble from '@/components/DataDisplay/NumberScramble';
 import { notFound } from 'next/navigation';
+import { useTasterDetail } from '@/hooks/useTasterDetail';
+import { useMemo } from 'react';
 
 type RouteParams = {
 	params: Promise<{ id: string }>;
 };
 
-export default async function TasterPage({ params }: RouteParams) {
-	const { id } = await params;
-	const supabase = await createClient();
+export default function TasterPage({ params }: RouteParams) {
+	const unwrappedParams = useMemo(() => {
+		if (params instanceof Promise) {
+			throw params;
+		}
+		return params;
+	}, [params]);
+	
+	const { id } = unwrappedParams;
+	const { data, isLoading, error } = useTasterDetail(id);
 
-	// Get taster details
-	const { data: taster, error: tasterError } = await supabase
-		.from('tasters')
-		.select('*')
-		.eq('id', id)
-		.single();
-
-	if (tasterError || !taster) {
+	if (error || (!isLoading && !data?.taster)) {
 		notFound();
 	}
 
-	// Get all scores by this taster
-	const { data: scores } = await supabase
-		.from('scores')
-		.select(`
-			*,
-			tastings (
-				id,
-				date,
-				sake_id,
-				sakes (
-					id,
-					name
-				)
-			)
-		`)
-		.eq('taster_id', id)
-		.order('created_at', { ascending: false });
+	const taster = data?.taster;
+	const scores = data?.scores || [];
 
 	// Calculate statistics
 	const allScores = scores?.map((s: any) => s.score) || [];
@@ -54,22 +42,26 @@ export default async function TasterPage({ params }: RouteParams) {
 	const lowestScore = allScores.length > 0 ? Math.min(...allScores) : null;
 
 	// Get unique sakes tasted
-	const uniqueSakes = new Set(scores?.map((s: any) => s.tastings?.sake_id).filter(Boolean));
+	const uniqueSakes = useMemo(() => {
+		return new Set(scores?.map((s: any) => s.tastings?.sake_id).filter(Boolean));
+	}, [scores]);
 	const totalSakesTasted = uniqueSakes.size;
 
 	// Get favorite sake (most frequently tasted)
-	const sakeFrequency = new Map<string, number>();
-	scores?.forEach((score: any) => {
-		const sakeId = score.tastings?.sake_id;
-		if (sakeId) {
-			sakeFrequency.set(sakeId, (sakeFrequency.get(sakeId) || 0) + 1);
-		}
-	});
+	const favoriteSake = useMemo(() => {
+		const sakeFrequency = new Map<string, number>();
+		scores?.forEach((score: any) => {
+			const sakeId = score.tastings?.sake_id;
+			if (sakeId) {
+				sakeFrequency.set(sakeId, (sakeFrequency.get(sakeId) || 0) + 1);
+			}
+		});
 
-	const favoriteSakeId = Array.from(sakeFrequency.entries())
-		.sort((a: [string, number], b: [string, number]) => b[1] - a[1])[0]?.[0];
+		const favoriteSakeId = Array.from(sakeFrequency.entries())
+			.sort((a: [string, number], b: [string, number]) => b[1] - a[1])[0]?.[0];
 
-	const favoriteSake = scores?.find((s: any) => s.tastings?.sake_id === favoriteSakeId)?.tastings?.sakes;
+		return scores?.find((s: any) => s.tastings?.sake_id === favoriteSakeId)?.tastings?.sakes;
+	}, [scores]);
 
 	// Helper function to get score label
 	const getScoreLabel = (score: number) => {
@@ -80,6 +72,10 @@ export default async function TasterPage({ params }: RouteParams) {
 		if (score >= 5) return "DECENT";
 		return "FAIR";
 	};
+
+	if (!taster) {
+		return null;
+	}
 
 	return (
 		<Frame title={`【 TASTER PROFILE 利酒師 】`}>
@@ -140,20 +136,20 @@ export default async function TasterPage({ params }: RouteParams) {
 							<div className="grid grid-cols-2 gap-4">
 								<div className="text-center">
 									<div className="text-3xl text-cyan">
-										<NumberScramble value={scores?.length || 0} decimals={0} />
+										<NumberScramble value={scores?.length || 0} decimals={0} isLoading={isLoading} />
 									</div>
 									<div className="text-muted text-sm mt-1">SCORES</div>
 								</div>
 								<div className="text-center">
 									<div className="text-3xl text-neon-pink">
-										<NumberScramble value={totalSakesTasted} decimals={0} />
+										<NumberScramble value={totalSakesTasted} decimals={0} isLoading={isLoading} />
 									</div>
 									<div className="text-muted text-sm mt-1">SAKES</div>
 								</div>
 								{highestScore !== null && (
 									<div className="text-center">
 										<div className="text-3xl text-green">
-											<NumberScramble value={highestScore} decimals={1} />
+											<NumberScramble value={highestScore} decimals={1} isLoading={isLoading} />
 										</div>
 										<div className="text-muted text-sm mt-1">HIGHEST</div>
 									</div>
@@ -161,7 +157,7 @@ export default async function TasterPage({ params }: RouteParams) {
 								{lowestScore !== null && (
 									<div className="text-center">
 										<div className="text-3xl text-red">
-											<NumberScramble value={lowestScore} decimals={1} />
+											<NumberScramble value={lowestScore} decimals={1} isLoading={isLoading} />
 										</div>
 										<div className="text-muted text-sm mt-1">LOWEST</div>
 									</div>

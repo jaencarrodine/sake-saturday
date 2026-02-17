@@ -1,4 +1,5 @@
-import { createClient } from '@/lib/supabase/server';
+'use client';
+
 import Image from 'next/image';
 import Link from 'next/link';
 import Frame from '@/components/Frame';
@@ -6,54 +7,40 @@ import GridArea from '@/components/GridArea';
 import BlockGauge from '@/components/DataDisplay/BlockGauge';
 import NumberScramble from '@/components/DataDisplay/NumberScramble';
 import { notFound } from 'next/navigation';
+import { useTastingDetail } from '@/hooks/useTastingDetail';
+import { useMemo } from 'react';
 
 type RouteParams = {
 	params: Promise<{ id: string }>;
 };
 
-export default async function TastingPage({ params }: RouteParams) {
-	const { id } = await params;
-	const supabase = await createClient();
+export default function TastingPage({ params }: RouteParams) {
+	const unwrappedParams = useMemo(() => {
+		if (params instanceof Promise) {
+			throw params;
+		}
+		return params;
+	}, [params]);
+	
+	const { id } = unwrappedParams;
+	const { data, isLoading, error } = useTastingDetail(id);
 
-	// Get tasting details
-	const { data: tasting, error: tastingError } = await supabase
-		.from('tastings')
-		.select(`
-			*,
-			sakes (
-				id,
-				name,
-				prefecture,
-				type,
-				grade
-			)
-		`)
-		.eq('id', id)
-		.single();
-
-	if (tastingError || !tasting) {
+	if (error || (!isLoading && !data?.tasting)) {
 		notFound();
 	}
 
-	// Get all scores for this tasting
-	const { data: scores } = await supabase
-		.from('scores')
-		.select(`
-			*,
-			tasters (
-				id,
-				name,
-				profile_pic
-			)
-		`)
-		.eq('tasting_id', id)
-		.order('score', { ascending: false });
+	const tasting = data?.tasting;
+	const scores = data?.scores || [];
 
 	// Calculate statistics
 	const allScores = scores?.map((s: any) => s.score) || [];
 	const averageScore = allScores.length > 0
 		? allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length
 		: null;
+
+	if (!tasting) {
+		return null;
+	}
 
 	const tastingDate = new Date(tasting.date);
 	const formattedDate = tastingDate.toLocaleDateString('en-US', {
@@ -129,7 +116,7 @@ export default async function TastingPage({ params }: RouteParams) {
 								<div className="border-t border-divider pt-4">
 									<div className="text-center">
 										<div className="text-3xl text-cyan">
-											<NumberScramble value={scores?.length || 0} decimals={0} />
+											<NumberScramble value={scores?.length || 0} decimals={0} isLoading={isLoading} />
 										</div>
 										<div className="text-muted text-sm mt-1">TOTAL SCORES</div>
 									</div>

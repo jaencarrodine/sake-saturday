@@ -1,59 +1,36 @@
-import { createClient } from '@/lib/supabase/server';
+'use client';
+
 import Link from 'next/link';
 import Frame from '@/components/Frame';
 import GridArea from '@/components/GridArea';
 import BlockGauge from '@/components/DataDisplay/BlockGauge';
 import NumberScramble from '@/components/DataDisplay/NumberScramble';
 import { notFound } from 'next/navigation';
+import { useSakeDetail } from '@/hooks/useSakeDetail';
+import { useMemo } from 'react';
 
 type RouteParams = {
 	params: Promise<{ id: string }>;
 };
 
-export default async function SakePage({ params }: RouteParams) {
-	const { id } = await params;
-	const supabase = await createClient();
+export default function SakePage({ params }: RouteParams) {
+	const unwrappedParams = useMemo(() => {
+		if (params instanceof Promise) {
+			throw params;
+		}
+		return params;
+	}, [params]);
+	
+	const { id } = unwrappedParams;
+	const { data, isLoading, error } = useSakeDetail(id);
 
-	// Get sake details
-	const { data: sake, error: sakeError } = await supabase
-		.from('sakes')
-		.select('*')
-		.eq('id', id)
-		.single();
-
-	if (sakeError || !sake) {
+	if (error || (!isLoading && !data?.sake)) {
 		notFound();
 	}
 
-	// Get all tastings for this sake
-	const { data: tastings } = await supabase
-		.from('tastings')
-		.select('*')
-		.eq('sake_id', id)
-		.order('date', { ascending: false });
-
-	// Get all scores for this sake
-	const tastingIds = tastings?.map(t => t.id) || [];
-	let scores: any[] = [];
-
-	if (tastingIds.length > 0) {
-		const { data: scoresData } = await supabase
-			.from('scores')
-			.select(`
-				*,
-				tasters (
-					id,
-					name,
-					profile_pic
-				),
-				tastings (
-					id,
-					date
-				)
-			`)
-			.in('tasting_id', tastingIds);
-		scores = scoresData || [];
-	}
+	const sake = data?.sake;
+	const tastings = data?.tastings || [];
+	const scores = data?.scores || [];
 
 	// Calculate statistics
 	const allScores = scores.map((s: any) => s.score);
@@ -65,18 +42,20 @@ export default async function SakePage({ params }: RouteParams) {
 	const lowestScore = allScores.length > 0 ? Math.min(...allScores) : null;
 
 	// Group scores by tasting
-	const scoresByTasting = (tastings as any[])?.map((tasting: any) => {
-		const tastingScores = scores.filter((s: any) => s.tasting_id === tasting.id);
-		const avgScore = tastingScores.length > 0
-			? tastingScores.reduce((sum: number, s: any) => sum + s.score, 0) / tastingScores.length
-			: null;
+	const scoresByTasting = useMemo(() => {
+		return (tastings as any[])?.map((tasting: any) => {
+			const tastingScores = scores.filter((s: any) => s.tasting_id === tasting.id);
+			const avgScore = tastingScores.length > 0
+				? tastingScores.reduce((sum: number, s: any) => sum + s.score, 0) / tastingScores.length
+				: null;
 
-		return {
-			tasting,
-			scores: tastingScores,
-			average_score: avgScore,
-		};
-	}) || [];
+			return {
+				tasting,
+				scores: tastingScores,
+				average_score: avgScore,
+			};
+		}) || [];
+	}, [tastings, scores]);
 
 	// Helper function to get score label
 	const getScoreLabel = (score: number) => {
@@ -87,6 +66,10 @@ export default async function SakePage({ params }: RouteParams) {
 		if (score >= 5) return "DECENT";
 		return "FAIR";
 	};
+
+	if (!sake) {
+		return null;
+	}
 
 	return (
 		<Frame title={`【 ${sake.name} 】`}>
@@ -201,20 +184,20 @@ export default async function SakePage({ params }: RouteParams) {
 								<div className="grid grid-cols-2 gap-4 text-center">
 									<div>
 										<div className="text-3xl text-cyan">
-											<NumberScramble value={tastings?.length || 0} decimals={0} />
+											<NumberScramble value={tastings?.length || 0} decimals={0} isLoading={isLoading} />
 										</div>
 										<div className="text-muted text-sm mt-1">TASTINGS</div>
 									</div>
 									<div>
 										<div className="text-3xl text-neon-pink">
-											<NumberScramble value={scores.length} decimals={0} />
+											<NumberScramble value={scores.length} decimals={0} isLoading={isLoading} />
 										</div>
 										<div className="text-muted text-sm mt-1">SCORES</div>
 									</div>
 									{highestScore !== null && (
 										<div>
 											<div className="text-3xl text-green">
-												<NumberScramble value={highestScore} decimals={1} />
+												<NumberScramble value={highestScore} decimals={1} isLoading={isLoading} />
 											</div>
 											<div className="text-muted text-sm mt-1">HIGHEST</div>
 										</div>
@@ -222,7 +205,7 @@ export default async function SakePage({ params }: RouteParams) {
 									{lowestScore !== null && (
 										<div>
 											<div className="text-3xl text-red">
-												<NumberScramble value={lowestScore} decimals={1} />
+												<NumberScramble value={lowestScore} decimals={1} isLoading={isLoading} />
 											</div>
 											<div className="text-muted text-sm mt-1">LOWEST</div>
 										</div>
