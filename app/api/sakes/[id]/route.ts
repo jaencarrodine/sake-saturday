@@ -37,7 +37,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
 		}
 
 		// Get all scores for each tasting
-		const tastingIds = tastings?.map(t => t.id) || [];
+		const tastingIds = tastings?.map((t: any) => t.id) || [];
 		let scores: any[] = [];
 		
 		if (tastingIds.length > 0) {

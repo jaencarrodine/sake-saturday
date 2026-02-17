@@ -54,7 +54,7 @@ export default async function SakePage({ params }: RouteParams) {
 	}
 
 	// Calculate statistics
-	const allScores = scores.map(s => s.score);
+	const allScores = scores.map((s: any) => s.score);
 	const averageScore = allScores.length > 0
 		? allScores.reduce((a, b) => a + b, 0) / allScores.length
 		: null;
@@ -63,10 +63,10 @@ export default async function SakePage({ params }: RouteParams) {
 	const lowestScore = allScores.length > 0 ? Math.min(...allScores) : null;
 
 	// Group scores by tasting
-	const scoresByTasting = tastings?.map(tasting => {
-		const tastingScores = scores.filter(s => s.tasting_id === tasting.id);
+	const scoresByTasting = (tastings as any[])?.map((tasting: any) => {
+		const tastingScores = scores.filter((s: any) => s.tasting_id === tasting.id);
 		const avgScore = tastingScores.length > 0
-			? tastingScores.reduce((sum, s) => sum + s.score, 0) / tastingScores.length
+			? tastingScores.reduce((sum: number, s: any) => sum + s.score, 0) / tastingScores.length
 			: null;
 
 		return {
@@ -228,7 +228,7 @@ export default async function SakePage({ params }: RouteParams) {
 							<h2 className="text-2xl font-bold text-foreground mb-4">All Tastings</h2>
 							{scoresByTasting.length > 0 ? (
 								<div className="space-y-6">
-									{scoresByTasting.map(({ tasting, scores: tastingScores, average_score }) => {
+									{scoresByTasting.map(({ tasting, scores: tastingScores, average_score }: any) => {
 										const date = new Date(tasting.tasting_date);
 										const formattedDate = date.toLocaleDateString('en-US', {
 											weekday: 'long',

@@ -50,9 +50,9 @@ export default async function TastingPage({ params }: RouteParams) {
 		.order('score', { ascending: false });
 
 	// Calculate statistics
-	const allScores = scores?.map(s => s.score) || [];
+	const allScores = scores?.map((s: any) => s.score) || [];
 	const averageScore = allScores.length > 0
-		? allScores.reduce((a, b) => a + b, 0) / allScores.length
+		? allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length
 		: null;
 
 	const date = new Date(tasting.tasting_date);

@@ -44,21 +44,21 @@ export default async function TasterPage({ params }: RouteParams) {
 		.order('created_at', { ascending: false });
 
 	// Calculate statistics
-	const allScores = scores?.map(s => s.score) || [];
+	const allScores = scores?.map((s: any) => s.score) || [];
 	const averageScore = allScores.length > 0
-		? allScores.reduce((a, b) => a + b, 0) / allScores.length
+		? allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length
 		: null;
 
 	const highestScore = allScores.length > 0 ? Math.max(...allScores) : null;
 	const lowestScore = allScores.length > 0 ? Math.min(...allScores) : null;
 
 	// Get unique sakes tasted
-	const uniqueSakes = new Set(scores?.map(s => s.tastings?.sake_id).filter(Boolean));
+	const uniqueSakes = new Set(scores?.map((s: any) => s.tastings?.sake_id).filter(Boolean));
 	const totalSakesTasted = uniqueSakes.size;
 
 	// Get favorite sake (most frequently tasted)
 	const sakeFrequency = new Map<string, number>();
-	scores?.forEach(score => {
+	scores?.forEach((score: any) => {
 		const sakeId = score.tastings?.sake_id;
 		if (sakeId) {
 			sakeFrequency.set(sakeId, (sakeFrequency.get(sakeId) || 0) + 1);
@@ -66,9 +66,9 @@ export default async function TasterPage({ params }: RouteParams) {
 	});
 
 	const favoriteSakeId = Array.from(sakeFrequency.entries())
-		.sort((a, b) => b[1] - a[1])[0]?.[0];
+		.sort((a: [string, number], b: [string, number]) => b[1] - a[1])[0]?.[0];
 
-	const favoriteSake = scores?.find(s => s.tastings?.sake_id === favoriteSakeId)?.tastings?.sakes;
+	const favoriteSake = scores?.find((s: any) => s.tastings?.sake_id === favoriteSakeId)?.tastings?.sakes;
 
 	return (
 		<div className="min-h-screen bg-gradient-to-b from-background to-zinc-950">

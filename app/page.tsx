@@ -34,7 +34,11 @@ export default async function Home() {
 		scores: number[];
 	}>();
 
-	scoresData?.forEach((score: any) => {
+	scoresData?.forEach((score: {
+		taster_id: string;
+		score: number;
+		tasters: { id: string; name: string; avatar_url: string | null } | null;
+	}) => {
 		if (!score.tasters) return;
 		
 		const tasterId = score.taster_id;
@@ -79,7 +83,7 @@ export default async function Home() {
 		.limit(6);
 
 	// Get scores for recent tastings
-	const tastingIds = tastings?.map(t => t.id) || [];
+	const tastingIds = tastings?.map((t: any) => t.id) || [];
 	let tastingScores: any[] = [];
 	
 	if (tastingIds.length > 0) {
@@ -91,10 +95,17 @@ export default async function Home() {
 	}
 
 	// Calculate average scores for tastings
-	const tastingsWithScores = tastings?.map(tasting => {
-		const scores = tastingScores.filter(s => s.tasting_id === tasting.id);
+	const tastingsWithScores = tastings?.map((tasting: {
+		id: string;
+		tasting_date: string;
+		location: string | null;
+		image_url: string | null;
+		sake_id: string;
+		sakes: { id: string; name: string; name_japanese: string | null } | null;
+	}) => {
+		const scores = tastingScores.filter((s: { tasting_id: string; score: number }) => s.tasting_id === tasting.id);
 		const averageScore = scores.length > 0
-			? scores.reduce((sum, s) => sum + s.score, 0) / scores.length
+			? scores.reduce((sum: number, s: { score: number }) => sum + s.score, 0) / scores.length
 			: undefined;
 
 		return {
@@ -130,7 +141,7 @@ export default async function Home() {
 					</div>
 					{sakes && sakes.length > 0 ? (
 						<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-							{sakes.map((sake) => (
+							{sakes.map((sake: any) => (
 								<SakeCard key={sake.sake_id} sake={sake} />
 							))}
 						</div>
@@ -153,7 +164,7 @@ export default async function Home() {
 					</div>
 					{tastingsWithScores.length > 0 ? (
 						<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-							{tastingsWithScores.map((tasting) => (
+							{tastingsWithScores.map((tasting: any) => (
 								<TastingCard key={tasting.id} tasting={tasting} />
 							))}
 						</div>
