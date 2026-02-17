@@ -8,7 +8,7 @@ import BlockGauge from '@/components/DataDisplay/BlockGauge';
 import NumberScramble from '@/components/DataDisplay/NumberScramble';
 import { notFound } from 'next/navigation';
 import { useTasterDetail } from '@/hooks/useTasterDetail';
-import { use } from 'react';
+import { use, useMemo } from 'react';
 
 type RouteParams = {
 	params: Promise<{ id: string }>;

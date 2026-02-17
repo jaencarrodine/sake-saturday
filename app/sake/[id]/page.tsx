@@ -7,7 +7,7 @@ import BlockGauge from '@/components/DataDisplay/BlockGauge';
 import NumberScramble from '@/components/DataDisplay/NumberScramble';
 import { notFound } from 'next/navigation';
 import { useSakeDetail } from '@/hooks/useSakeDetail';
-import { use } from 'react';
+import { use, useMemo } from 'react';
 
 type RouteParams = {
 	params: Promise<{ id: string }>;
