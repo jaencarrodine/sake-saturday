@@ -189,6 +189,45 @@ export type Database = {
           },
         ]
       }
+      whatsapp_messages: {
+        Row: {
+          id: string
+          direction: string
+          from_number: string
+          to_number: string
+          body: string | null
+          media_urls: string[] | null
+          twilio_sid: string
+          processed: boolean
+          processed_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          direction: string
+          from_number: string
+          to_number: string
+          body?: string | null
+          media_urls?: string[] | null
+          twilio_sid: string
+          processed?: boolean
+          processed_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          direction?: string
+          from_number?: string
+          to_number?: string
+          body?: string | null
+          media_urls?: string[] | null
+          twilio_sid?: string
+          processed?: boolean
+          processed_at?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       sake_rankings: {
