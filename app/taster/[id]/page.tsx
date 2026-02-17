@@ -8,6 +8,7 @@ import BlockGauge from '@/components/DataDisplay/BlockGauge';
 import NumberScramble from '@/components/DataDisplay/NumberScramble';
 import { notFound } from 'next/navigation';
 import { useTasterDetail } from '@/hooks/useTasterDetail';
+import { getRank, getNextRank } from '@/lib/tasterRanks';
 import { use, useMemo } from 'react';
 
 type RouteParams = {
@@ -39,6 +40,8 @@ export default function TasterPage({ params }: RouteParams) {
 		return new Set(scores?.map((s: any) => s.tastings?.sake_id).filter(Boolean));
 	}, [scores]);
 	const totalSakesTasted = uniqueSakes.size;
+	const rank = getRank(totalSakesTasted);
+	const nextRankInfo = getNextRank(totalSakesTasted);
 
 	// Get favorite sake (most frequently tasted)
 	const favoriteSake = useMemo(() => {
@@ -106,6 +109,31 @@ export default function TasterPage({ params }: RouteParams) {
 								{/* Name */}
 								<div className="text-center">
 									<div className="text-2xl text-sake-gold">{taster.name}</div>
+									{/* Rank Badge */}
+									<div className="mt-2">
+										<span className="text-3xl" style={{ color: rank.color }}>{rank.kanji}</span>
+										<div className="text-sm text-muted mt-1">
+											{rank.romaji} — {rank.english}
+										</div>
+									</div>
+									{/* Rank Progress */}
+									{nextRankInfo && (
+										<div className="mt-3 border-t border-divider pt-3">
+											<div className="text-xs text-muted mb-1">
+												NEXT: {nextRankInfo.nextRank.kanji} {nextRankInfo.nextRank.romaji} ({nextRankInfo.remaining} more)
+											</div>
+											<BlockGauge
+												value={nextRankInfo.progress}
+												blockLength={12}
+												startColor="#79C39A"
+												midColor="#79C39A"
+												endColor="#79C39A"
+											/>
+										</div>
+									)}
+									{!nextRankInfo && totalSakesTasted > 0 && (
+										<div className="mt-3 text-xs text-neon-pink">★ MAX RANK ACHIEVED ★</div>
+									)}
 									{taster.phone_number && (
 										<div className="text-muted text-sm mt-2">{taster.phone_number}</div>
 									)}

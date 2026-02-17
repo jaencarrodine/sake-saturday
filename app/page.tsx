@@ -10,6 +10,7 @@ import { useTasterLeaderboard } from '@/hooks/useTasterLeaderboard';
 import { useRecentTastings } from '@/hooks/useRecentTastings';
 import { useTastingScores } from '@/hooks/useTastingScores';
 import { useStats } from '@/hooks/useStats';
+import { getRank } from '@/lib/tasterRanks';
 import { useMemo } from 'react';
 
 export default function Home() {
@@ -150,6 +151,9 @@ export default function Home() {
 									>
 										<div className="flex items-center gap-2 flex-1 min-w-0">
 											<span className="text-primary-highlight">&gt;</span>
+											<span style={{ color: getRank(taster.tastings_count || 0).color }} title={getRank(taster.tastings_count || 0).romaji}>
+												{getRank(taster.tastings_count || 0).kanji}
+											</span>
 											<span className="text-white truncate">{taster.name}</span>
 										</div>
 										<div className="flex items-center gap-2">
