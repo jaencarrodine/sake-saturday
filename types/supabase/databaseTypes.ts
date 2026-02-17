@@ -14,113 +14,207 @@ export type Database = {
   }
   public: {
     Tables: {
-      kikizakes: {
+      sakes: {
         Row: {
-          back_image: string | null
-          created_at: string
-          front_image: string | null
           id: string
-          owner: string
-          sake: string
+          name: string
+          name_japanese: string | null
+          brewery: string | null
+          prefecture: string | null
+          type: string | null
+          grade: string | null
+          rice: string | null
+          polishing_ratio: number | null
+          alcohol_percentage: number | null
+          smv: number | null
+          acidity: number | null
+          image_url: string | null
+          created_at: string
+          updated_at: string
         }
         Insert: {
-          back_image?: string | null
-          created_at?: string
-          front_image?: string | null
           id?: string
-          owner: string
-          sake?: string
+          name: string
+          name_japanese?: string | null
+          brewery?: string | null
+          prefecture?: string | null
+          type?: string | null
+          grade?: string | null
+          rice?: string | null
+          polishing_ratio?: number | null
+          alcohol_percentage?: number | null
+          smv?: number | null
+          acidity?: number | null
+          image_url?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Update: {
-          back_image?: string | null
-          created_at?: string
-          front_image?: string | null
           id?: string
-          owner?: string
-          sake?: string
+          name?: string
+          name_japanese?: string | null
+          brewery?: string | null
+          prefecture?: string | null
+          type?: string | null
+          grade?: string | null
+          rice?: string | null
+          polishing_ratio?: number | null
+          alcohol_percentage?: number | null
+          smv?: number | null
+          acidity?: number | null
+          image_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      tasters: {
+        Row: {
+          id: string
+          name: string
+          phone_number: string | null
+          email: string | null
+          avatar_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          phone_number?: string | null
+          email?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          phone_number?: string | null
+          email?: string | null
+          avatar_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      tastings: {
+        Row: {
+          id: string
+          sake_id: string
+          tasting_date: string
+          location: string | null
+          notes: string | null
+          image_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          sake_id: string
+          tasting_date?: string
+          location?: string | null
+          notes?: string | null
+          image_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          sake_id?: string
+          tasting_date?: string
+          location?: string | null
+          notes?: string | null
+          image_url?: string | null
+          created_at?: string
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "kikizakis_owner_fkey"
-            columns: ["owner"]
+            foreignKeyName: "tastings_sake_id_fkey"
+            columns: ["sake_id"]
             isOneToOne: false
-            referencedRelation: "users"
+            referencedRelation: "sakes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tastings_sake_id_fkey"
+            columns: ["sake_id"]
+            isOneToOne: false
+            referencedRelation: "sake_rankings"
+            referencedColumns: ["sake_id"]
+          },
+        ]
+      }
+      scores: {
+        Row: {
+          id: string
+          tasting_id: string
+          taster_id: string
+          score: number
+          aroma_score: number | null
+          flavor_score: number | null
+          finish_score: number | null
+          notes: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          tasting_id: string
+          taster_id: string
+          score: number
+          aroma_score?: number | null
+          flavor_score?: number | null
+          finish_score?: number | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          tasting_id?: string
+          taster_id?: string
+          score?: number
+          aroma_score?: number | null
+          flavor_score?: number | null
+          finish_score?: number | null
+          notes?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scores_tasting_id_fkey"
+            columns: ["tasting_id"]
+            isOneToOne: false
+            referencedRelation: "tastings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scores_taster_id_fkey"
+            columns: ["taster_id"]
+            isOneToOne: false
+            referencedRelation: "tasters"
             referencedColumns: ["id"]
           },
         ]
       }
-      sakes: {
-        Row: {
-          bottling_company: string | null
-          created_at: string
-          grade: number | null
-          id: string
-          location_coordinates: number[] | null
-          location_name: string | null
-          name: string | null
-          opacity: string | null
-          polishing_ratio: number | null
-          prefecture: string | null
-          profile: string | null
-          recommended_serving_temperatures: string | null
-          rice: string | null
-          smv: number | null
-        }
-        Insert: {
-          bottling_company?: string | null
-          created_at?: string
-          grade?: number | null
-          id?: string
-          location_coordinates?: number[] | null
-          location_name?: string | null
-          name?: string | null
-          opacity?: string | null
-          polishing_ratio?: number | null
-          prefecture?: string | null
-          profile?: string | null
-          recommended_serving_temperatures?: string | null
-          rice?: string | null
-          smv?: number | null
-        }
-        Update: {
-          bottling_company?: string | null
-          created_at?: string
-          grade?: number | null
-          id?: string
-          location_coordinates?: number[] | null
-          location_name?: string | null
-          name?: string | null
-          opacity?: string | null
-          polishing_ratio?: number | null
-          prefecture?: string | null
-          profile?: string | null
-          recommended_serving_temperatures?: string | null
-          rice?: string | null
-          smv?: number | null
-        }
-        Relationships: []
-      }
-      users: {
-        Row: {
-          created_at: string
-          email: string
-          id: string
-        }
-        Insert: {
-          created_at?: string
-          email: string
-          id?: string
-        }
-        Update: {
-          created_at?: string
-          email?: string
-          id?: string
-        }
-        Relationships: []
-      }
     }
     Views: {
-      [_ in never]: never
+      sake_rankings: {
+        Row: {
+          sake_id: string | null
+          sake_name: string | null
+          sake_name_japanese: string | null
+          sake_image_url: string | null
+          average_score: number | null
+          total_tastings: number | null
+          total_scores: number | null
+          last_tasted: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       [_ in never]: never

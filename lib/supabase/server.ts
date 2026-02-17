@@ -1,5 +1,6 @@
 import { Database, Supabase } from '@blade/types';
 import { createServerClient } from '@supabase/ssr';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 
 export const createClient = async (): Promise<Supabase> => {
@@ -21,4 +22,18 @@ export const createClient = async (): Promise<Supabase> => {
 			},
 		},
 	}) as unknown as Supabase;
+};
+
+// Service role client for API routes with admin privileges
+export const createServiceClient = (): Supabase => {
+	return createSupabaseClient<Database>(
+		process.env.NEXT_PUBLIC_SUPABASE_URL!,
+		process.env.SUPABASE_SERVICE_ROLE_KEY!,
+		{
+			auth: {
+				autoRefreshToken: false,
+				persistSession: false,
+			},
+		}
+	) as unknown as Supabase;
 };
