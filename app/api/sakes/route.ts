@@ -46,17 +46,17 @@ const postHandler = async (req: NextRequest) => {
 			.from('sakes')
 			.insert({
 				name,
-				name_japanese: body.name_japanese,
-				brewery: body.brewery,
 				prefecture: body.prefecture,
 				type: body.type,
 				grade: body.grade,
 				rice: body.rice,
 				polishing_ratio: body.polishing_ratio,
-				alcohol_percentage: body.alcohol_percentage,
+				alc_percentage: body.alc_percentage,
 				smv: body.smv,
-				acidity: body.acidity,
-				image_url: body.image_url,
+				opacity: body.opacity,
+				profile: body.profile,
+				recommended_serving_temperatures: body.recommended_serving_temperatures,
+				bottling_company: body.bottling_company,
 			})
 			.select()
 			.single();
@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
 	try {
 		const { searchParams } = new URL(req.url);
 		const search = searchParams.get('search');
-		const sort = searchParams.get('sort') || 'average_score';
+		const sort = searchParams.get('sort') || 'avg_score';
 		const order = searchParams.get('order') || 'desc';
 
 		const supabase = createServiceClient();
@@ -97,12 +97,12 @@ export async function GET(req: NextRequest) {
 
 		// Apply search filter if provided
 		if (search) {
-			query = query.or(`sake_name.ilike.%${search}%,sake_name_japanese.ilike.%${search}%`);
+			query = query.or(`name.ilike.%${search}%`);
 		}
 
 		// Apply sorting
-		const validSortFields = ['average_score', 'total_tastings', 'total_scores', 'last_tasted', 'sake_name'];
-		const sortField = validSortFields.includes(sort) ? sort : 'average_score';
+		const validSortFields = ['avg_score', 'total_tastings', 'total_scores', 'name'];
+		const sortField = validSortFields.includes(sort) ? sort : 'avg_score';
 		const sortOrder = order === 'asc' ? 'asc' : 'desc';
 		
 		query = query.order(sortField, { ascending: sortOrder === 'asc', nullsFirst: false });

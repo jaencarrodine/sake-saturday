@@ -6,7 +6,7 @@ import { withApiAuth } from '@/lib/api/auth';
 const postHandler = async (req: NextRequest) => {
 	try {
 		const body = await req.json();
-		const { name, phone_number, email, avatar_url } = body;
+		const { name, phone_number, profile_pic } = body;
 
 		if (!name || typeof name !== 'string') {
 			return NextResponse.json(
@@ -60,8 +60,7 @@ const postHandler = async (req: NextRequest) => {
 			.insert({
 				name,
 				phone_number,
-				email,
-				avatar_url,
+				profile_pic,
 			})
 			.select()
 			.single();

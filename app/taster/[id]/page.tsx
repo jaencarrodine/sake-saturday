@@ -30,13 +30,11 @@ export default async function TasterPage({ params }: RouteParams) {
 			*,
 			tastings (
 				id,
-				tasting_date,
+				date,
 				sake_id,
 				sakes (
 					id,
-					name,
-					name_japanese,
-					image_url
+					name
 				)
 			)
 		`)
@@ -89,9 +87,9 @@ export default async function TasterPage({ params }: RouteParams) {
 							{/* Taster Avatar */}
 							<div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
 								<div className="w-32 h-32 mx-auto rounded-full overflow-hidden bg-zinc-800 mb-4">
-									{taster.avatar_url ? (
+									{taster.profile_pic ? (
 										<Image
-											src={taster.avatar_url}
+											src={taster.profile_pic}
 											alt={taster.name}
 											width={128}
 											height={128}
@@ -107,8 +105,8 @@ export default async function TasterPage({ params }: RouteParams) {
 								<h1 className="text-2xl font-bold text-foreground text-center mb-2">
 									{taster.name}
 								</h1>
-								{taster.email && (
-									<p className="text-sm text-muted-foreground text-center">{taster.email}</p>
+								{taster.phone_number && (
+									<p className="text-sm text-muted-foreground text-center">{taster.phone_number}</p>
 								)}
 							</div>
 
@@ -154,37 +152,23 @@ export default async function TasterPage({ params }: RouteParams) {
 										className="block hover:opacity-80 transition-opacity"
 									>
 										<div className="aspect-[3/4] relative bg-zinc-800 rounded-lg overflow-hidden mb-3">
-											{favoriteSake.image_url ? (
-												<Image
-													src={favoriteSake.image_url}
-													alt={favoriteSake.name}
-													fill
-													className="object-cover"
-												/>
-											) : (
-												<div className="w-full h-full flex items-center justify-center text-zinc-600">
-													<svg
-														className="w-12 h-12"
-														fill="none"
-														viewBox="0 0 24 24"
-														stroke="currentColor"
-													>
-														<path
-															strokeLinecap="round"
-															strokeLinejoin="round"
-															strokeWidth={1}
-															d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"
-														/>
-													</svg>
-												</div>
-											)}
+											<div className="w-full h-full flex items-center justify-center text-zinc-600">
+												<svg
+													className="w-12 h-12"
+													fill="none"
+													viewBox="0 0 24 24"
+													stroke="currentColor"
+												>
+													<path
+														strokeLinecap="round"
+														strokeLinejoin="round"
+														strokeWidth={1}
+														d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"
+													/>
+												</svg>
+											</div>
 										</div>
 										<h4 className="font-medium text-foreground">{favoriteSake.name}</h4>
-										{favoriteSake.name_japanese && (
-											<p className="text-sm text-muted-foreground font-noto">
-												{favoriteSake.name_japanese}
-											</p>
-										)}
 									</Link>
 								</div>
 							)}
@@ -200,8 +184,8 @@ export default async function TasterPage({ params }: RouteParams) {
 								<div className="space-y-4">
 									{scores.map((score: any) => {
 										const sake = score.tastings?.sakes;
-										const tastingDate = score.tastings?.tasting_date
-											? new Date(score.tastings.tasting_date).toLocaleDateString('en-US', {
+										const tastingDate = score.tastings?.date
+											? new Date(score.tastings.date).toLocaleDateString('en-US', {
 													month: 'short',
 													day: 'numeric',
 													year: 'numeric',
@@ -220,30 +204,21 @@ export default async function TasterPage({ params }: RouteParams) {
 															href={`/sake/${sake.id}`}
 															className="flex-shrink-0 w-20 h-28 relative bg-zinc-800 rounded-lg overflow-hidden hover:opacity-80 transition-opacity"
 														>
-															{sake.image_url ? (
-																<Image
-																	src={sake.image_url}
-																	alt={sake.name}
-																	fill
-																	className="object-cover"
-																/>
-															) : (
-																<div className="w-full h-full flex items-center justify-center text-zinc-600">
-																	<svg
-																		className="w-8 h-8"
-																		fill="none"
-																		viewBox="0 0 24 24"
-																		stroke="currentColor"
-																	>
-																		<path
-																			strokeLinecap="round"
-																			strokeLinejoin="round"
-																			strokeWidth={1}
-																			d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"
-																		/>
-																	</svg>
-																</div>
-															)}
+															<div className="w-full h-full flex items-center justify-center text-zinc-600">
+																<svg
+																	className="w-8 h-8"
+																	fill="none"
+																	viewBox="0 0 24 24"
+																	stroke="currentColor"
+																>
+																	<path
+																		strokeLinecap="round"
+																		strokeLinejoin="round"
+																		strokeWidth={1}
+																		d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"
+																	/>
+																</svg>
+															</div>
 														</Link>
 													)}
 
@@ -259,11 +234,6 @@ export default async function TasterPage({ params }: RouteParams) {
 																		{sake.name}
 																	</Link>
 																)}
-																{sake?.name_japanese && (
-																	<p className="text-sm text-muted-foreground font-noto">
-																		{sake.name_japanese}
-																	</p>
-																)}
 																{tastingDate && (
 																	<Link
 																		href={`/tasting/${score.tasting_id}`}
@@ -275,30 +245,6 @@ export default async function TasterPage({ params }: RouteParams) {
 															</div>
 															<ScoreBadge score={score.score} />
 														</div>
-
-														{/* Detailed Scores */}
-														{(score.aroma_score || score.flavor_score || score.finish_score) && (
-															<div className="flex gap-3 mb-3">
-																{score.aroma_score !== null && (
-																	<div className="text-center">
-																		<div className="text-xs text-muted-foreground mb-1">Aroma</div>
-																		<ScoreBadge score={score.aroma_score} size="sm" />
-																	</div>
-																)}
-																{score.flavor_score !== null && (
-																	<div className="text-center">
-																		<div className="text-xs text-muted-foreground mb-1">Flavor</div>
-																		<ScoreBadge score={score.flavor_score} size="sm" />
-																	</div>
-																)}
-																{score.finish_score !== null && (
-																	<div className="text-center">
-																		<div className="text-xs text-muted-foreground mb-1">Finish</div>
-																		<ScoreBadge score={score.finish_score} size="sm" />
-																	</div>
-																)}
-															</div>
-														)}
 
 														{/* Notes */}
 														{score.notes && (

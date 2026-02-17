@@ -30,7 +30,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
 			.from('tastings')
 			.select('*')
 			.eq('sake_id', id)
-			.order('tasting_date', { ascending: false });
+			.order('date', { ascending: false });
 
 		if (tastingsError) {
 			console.error('Error fetching tastings:', tastingsError);
@@ -48,7 +48,7 @@ export async function GET(req: NextRequest, context: RouteContext) {
 					tasters (
 						id,
 						name,
-						avatar_url
+						profile_pic
 					)
 				`)
 				.in('tasting_id', tastingIds);

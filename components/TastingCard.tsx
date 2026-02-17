@@ -6,13 +6,12 @@ import { cn } from '@/lib/utils';
 type TastingCardProps = {
 	tasting: {
 		id: string;
-		tasting_date: string;
-		location?: string | null;
-		image_url?: string | null;
+		date: string;
+		location_name?: string | null;
+		front_image?: string | null;
 		sake?: {
 			id: string;
 			name: string;
-			name_japanese?: string | null;
 		};
 		average_score?: number;
 		score_count?: number;
@@ -21,7 +20,7 @@ type TastingCardProps = {
 };
 
 export default function TastingCard({ tasting, className }: TastingCardProps) {
-	const date = new Date(tasting.tasting_date);
+	const date = new Date(tasting.date);
 	const formattedDate = date.toLocaleDateString('en-US', {
 		month: 'short',
 		day: 'numeric',
@@ -37,9 +36,9 @@ export default function TastingCard({ tasting, className }: TastingCardProps) {
 			)}
 		>
 			<div className="aspect-video relative bg-zinc-800">
-				{tasting.image_url ? (
+				{tasting.front_image ? (
 					<Image
-						src={tasting.image_url}
+						src={tasting.front_image}
 						alt="Tasting"
 						fill
 						className="object-cover group-hover:scale-105 transition-transform duration-300"
@@ -73,11 +72,6 @@ export default function TastingCard({ tasting, className }: TastingCardProps) {
 						<h3 className="font-semibold text-foreground line-clamp-1">
 							{tasting.sake.name}
 						</h3>
-						{tasting.sake.name_japanese && (
-							<p className="text-sm text-muted-foreground font-noto line-clamp-1">
-								{tasting.sake.name_japanese}
-							</p>
-						)}
 					</>
 				)}
 				<div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -86,9 +80,9 @@ export default function TastingCard({ tasting, className }: TastingCardProps) {
 						<span>{tasting.score_count} scores</span>
 					)}
 				</div>
-				{tasting.location && (
+				{tasting.location_name && (
 					<p className="text-xs text-muted-foreground line-clamp-1">
-						📍 {tasting.location}
+						📍 {tasting.location_name}
 					</p>
 				)}
 			</div>
