@@ -6,9 +6,9 @@ type TasterCardProps = {
 	taster: {
 		id: string;
 		name: string;
-		avatar_url?: string | null;
-		total_scores?: number;
-		average_score?: number;
+		profile_pic?: string | null;
+		tastings_count?: number;
+		avg_score_given?: number;
 	};
 	className?: string;
 };
@@ -23,9 +23,9 @@ export default function TasterCard({ taster, className }: TasterCardProps) {
 			)}
 		>
 			<div className="relative w-12 h-12 rounded-full overflow-hidden bg-zinc-800 flex-shrink-0">
-				{taster.avatar_url ? (
+				{taster.profile_pic ? (
 					<Image
-						src={taster.avatar_url}
+						src={taster.profile_pic}
 						alt={taster.name}
 						fill
 						className="object-cover"
@@ -41,13 +41,13 @@ export default function TasterCard({ taster, className }: TasterCardProps) {
 					{taster.name}
 				</h3>
 				<div className="flex items-center gap-2 text-xs text-muted-foreground">
-					{taster.total_scores !== undefined && (
-						<span>{taster.total_scores} scores</span>
+					{taster.tastings_count !== undefined && (
+						<span>{taster.tastings_count} tastings</span>
 					)}
-					{taster.average_score !== undefined && (
+					{taster.avg_score_given !== undefined && (
 						<>
 							<span>•</span>
-							<span>Avg: {taster.average_score.toFixed(1)}</span>
+							<span>Avg: {taster.avg_score_given.toFixed(1)}</span>
 						</>
 					)}
 				</div>

@@ -38,9 +38,6 @@ const postHandler = async (req: NextRequest) => {
 			tasting_id: s.tasting_id,
 			taster_id: s.taster_id,
 			score: s.score,
-			aroma_score: s.aroma_score,
-			flavor_score: s.flavor_score,
-			finish_score: s.finish_score,
 			notes: s.notes,
 		}));
 

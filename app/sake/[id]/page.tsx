@@ -28,7 +28,7 @@ export default async function SakePage({ params }: RouteParams) {
 		.from('tastings')
 		.select('*')
 		.eq('sake_id', id)
-		.order('tasting_date', { ascending: false });
+		.order('date', { ascending: false });
 
 	// Get all scores for this sake
 	const tastingIds = tastings?.map(t => t.id) || [];
@@ -42,11 +42,11 @@ export default async function SakePage({ params }: RouteParams) {
 				tasters (
 					id,
 					name,
-					avatar_url
+					profile_pic
 				),
 				tastings (
 					id,
-					tasting_date
+					date
 				)
 			`)
 			.in('tasting_id', tastingIds);
@@ -94,31 +94,21 @@ export default async function SakePage({ params }: RouteParams) {
 						<div className="sticky top-24 space-y-6">
 							{/* Sake Image */}
 							<div className="aspect-[3/4] relative bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-								{sake.image_url ? (
-									<Image
-										src={sake.image_url}
-										alt={sake.name}
-										fill
-										className="object-cover"
-										priority
-									/>
-								) : (
-									<div className="w-full h-full flex items-center justify-center text-zinc-600">
-										<svg
-											className="w-24 h-24"
-											fill="none"
-											viewBox="0 0 24 24"
-											stroke="currentColor"
-										>
-											<path
-												strokeLinecap="round"
-												strokeLinejoin="round"
-												strokeWidth={1}
-												d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"
-											/>
-										</svg>
-									</div>
-								)}
+								<div className="w-full h-full flex items-center justify-center text-zinc-600">
+									<svg
+										className="w-24 h-24"
+										fill="none"
+										viewBox="0 0 24 24"
+										stroke="currentColor"
+									>
+										<path
+											strokeLinecap="round"
+											strokeLinejoin="round"
+											strokeWidth={1}
+											d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"
+										/>
+									</svg>
+								</div>
 							</div>
 
 							{/* Stats */}
@@ -161,15 +151,12 @@ export default async function SakePage({ params }: RouteParams) {
 						{/* Sake Info */}
 						<div>
 							<h1 className="text-4xl font-bold text-foreground mb-2">{sake.name}</h1>
-							{sake.name_japanese && (
-								<p className="text-2xl font-noto text-muted-foreground mb-4">{sake.name_japanese}</p>
-							)}
 
 							<div className="grid grid-cols-2 gap-4 mt-6">
-								{sake.brewery && (
+								{sake.bottling_company && (
 									<div>
-										<div className="text-sm text-muted-foreground">Brewery</div>
-										<div className="font-medium">{sake.brewery}</div>
+										<div className="text-sm text-muted-foreground">Bottling Company</div>
+										<div className="font-medium">{sake.bottling_company}</div>
 									</div>
 								)}
 								{sake.prefecture && (
@@ -202,25 +189,39 @@ export default async function SakePage({ params }: RouteParams) {
 										<div className="font-medium">{sake.polishing_ratio}%</div>
 									</div>
 								)}
-								{sake.alcohol_percentage && (
+								{sake.alc_percentage && (
 									<div>
 										<div className="text-sm text-muted-foreground">Alcohol</div>
-										<div className="font-medium">{sake.alcohol_percentage}%</div>
+										<div className="font-medium">{sake.alc_percentage}%</div>
 									</div>
 								)}
-								{sake.smv !== null && (
+								{sake.smv !== null && sake.smv !== undefined && (
 									<div>
 										<div className="text-sm text-muted-foreground">SMV</div>
 										<div className="font-medium">{sake.smv}</div>
 									</div>
 								)}
-								{sake.acidity !== null && (
+								{sake.opacity && (
 									<div>
-										<div className="text-sm text-muted-foreground">Acidity</div>
-										<div className="font-medium">{sake.acidity}</div>
+										<div className="text-sm text-muted-foreground">Opacity</div>
+										<div className="font-medium">{sake.opacity}</div>
 									</div>
 								)}
 							</div>
+
+							{sake.profile && (
+								<div className="mt-6">
+									<div className="text-sm text-muted-foreground mb-2">Profile</div>
+									<div className="text-foreground">{sake.profile}</div>
+								</div>
+							)}
+
+							{sake.recommended_serving_temperatures && (
+								<div className="mt-4">
+									<div className="text-sm text-muted-foreground mb-2">Recommended Serving Temperatures</div>
+									<div className="text-foreground">{sake.recommended_serving_temperatures}</div>
+								</div>
+							)}
 						</div>
 
 						{/* Tastings */}
@@ -229,8 +230,8 @@ export default async function SakePage({ params }: RouteParams) {
 							{scoresByTasting.length > 0 ? (
 								<div className="space-y-6">
 									{scoresByTasting.map(({ tasting, scores: tastingScores, average_score }: any) => {
-										const date = new Date(tasting.tasting_date);
-										const formattedDate = date.toLocaleDateString('en-US', {
+										const tastingDate = new Date(tasting.date);
+										const formattedDate = tastingDate.toLocaleDateString('en-US', {
 											weekday: 'long',
 											year: 'numeric',
 											month: 'long',
@@ -247,18 +248,14 @@ export default async function SakePage({ params }: RouteParams) {
 														>
 															{formattedDate}
 														</Link>
-														{tasting.location && (
-															<p className="text-sm text-muted-foreground mt-1">📍 {tasting.location}</p>
+														{tasting.location_name && (
+															<p className="text-sm text-muted-foreground mt-1">📍 {tasting.location_name}</p>
 														)}
 													</div>
 													{average_score !== null && (
 														<ScoreBadge score={average_score} />
 													)}
 												</div>
-
-												{tasting.notes && (
-													<p className="text-muted-foreground mb-4">{tasting.notes}</p>
-												)}
 
 												{/* Scores */}
 												<div className="space-y-2">
@@ -273,9 +270,9 @@ export default async function SakePage({ params }: RouteParams) {
 																className="flex items-center gap-3 hover:text-gold transition-colors"
 															>
 																<div className="w-8 h-8 rounded-full overflow-hidden bg-zinc-700 flex-shrink-0">
-																	{score.tasters?.avatar_url ? (
+																	{score.tasters?.profile_pic ? (
 																		<Image
-																			src={score.tasters.avatar_url}
+																			src={score.tasters.profile_pic}
 																			alt={score.tasters.name}
 																			width={32}
 																			height={32}

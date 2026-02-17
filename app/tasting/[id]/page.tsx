@@ -20,9 +20,6 @@ export default async function TastingPage({ params }: RouteParams) {
 			sakes (
 				id,
 				name,
-				name_japanese,
-				image_url,
-				brewery,
 				prefecture,
 				type,
 				grade
@@ -43,7 +40,7 @@ export default async function TastingPage({ params }: RouteParams) {
 			tasters (
 				id,
 				name,
-				avatar_url
+				profile_pic
 			)
 		`)
 		.eq('tasting_id', id)
@@ -55,8 +52,8 @@ export default async function TastingPage({ params }: RouteParams) {
 		? allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length
 		: null;
 
-	const date = new Date(tasting.tasting_date);
-	const formattedDate = date.toLocaleDateString('en-US', {
+	const tastingDate = new Date(tasting.date);
+	const formattedDate = tastingDate.toLocaleDateString('en-US', {
 		weekday: 'long',
 		year: 'numeric',
 		month: 'long',
@@ -80,10 +77,10 @@ export default async function TastingPage({ params }: RouteParams) {
 					<div className="lg:col-span-1">
 						<div className="sticky top-24 space-y-6">
 							{/* Tasting Image */}
-							{tasting.image_url && (
+							{tasting.front_image && (
 								<div className="aspect-video relative bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
 									<Image
-										src={tasting.image_url}
+										src={tasting.front_image}
 										alt="Tasting"
 										fill
 										className="object-cover"
@@ -99,43 +96,34 @@ export default async function TastingPage({ params }: RouteParams) {
 									className="block bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden hover:border-gold/50 transition-all duration-300"
 								>
 									<div className="aspect-[3/4] relative bg-zinc-800">
-										{tasting.sakes.image_url ? (
-											<Image
-												src={tasting.sakes.image_url}
-												alt={tasting.sakes.name}
-												fill
-												className="object-cover"
-											/>
-										) : (
-											<div className="w-full h-full flex items-center justify-center text-zinc-600">
-												<svg
-													className="w-16 h-16"
-													fill="none"
-													viewBox="0 0 24 24"
-													stroke="currentColor"
-												>
-													<path
-														strokeLinecap="round"
-														strokeLinejoin="round"
-														strokeWidth={1}
-														d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"
-													/>
-												</svg>
-											</div>
-										)}
+										<div className="w-full h-full flex items-center justify-center text-zinc-600">
+											<svg
+												className="w-16 h-16"
+												fill="none"
+												viewBox="0 0 24 24"
+												stroke="currentColor"
+											>
+												<path
+													strokeLinecap="round"
+													strokeLinejoin="round"
+													strokeWidth={1}
+													d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"
+												/>
+											</svg>
+										</div>
 									</div>
 									<div className="p-4">
 										<h3 className="font-semibold text-foreground line-clamp-2">
 											{tasting.sakes.name}
 										</h3>
-										{tasting.sakes.name_japanese && (
-											<p className="text-sm text-muted-foreground font-noto line-clamp-1 mt-1">
-												{tasting.sakes.name_japanese}
+										{tasting.sakes.prefecture && (
+											<p className="text-sm text-muted-foreground mt-2">
+												{tasting.sakes.prefecture}
 											</p>
 										)}
-										{tasting.sakes.brewery && (
-											<p className="text-sm text-muted-foreground mt-2">
-												{tasting.sakes.brewery}
+										{(tasting.sakes.type || tasting.sakes.grade) && (
+											<p className="text-sm text-muted-foreground mt-1">
+												{[tasting.sakes.type, tasting.sakes.grade].filter(Boolean).join(' • ')}
 											</p>
 										)}
 									</div>
@@ -168,17 +156,10 @@ export default async function TastingPage({ params }: RouteParams) {
 							<h1 className="text-4xl font-bold text-foreground mb-2">Tasting Session</h1>
 							<p className="text-xl text-muted-foreground mb-4">{formattedDate}</p>
 
-							{tasting.location && (
+							{tasting.location_name && (
 								<div className="flex items-center gap-2 text-muted-foreground mb-4">
 									<span>📍</span>
-									<span>{tasting.location}</span>
-								</div>
-							)}
-
-							{tasting.notes && (
-								<div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 mt-6">
-									<h3 className="font-semibold text-lg mb-2">Notes</h3>
-									<p className="text-muted-foreground whitespace-pre-wrap">{tasting.notes}</p>
+									<span>{tasting.location_name}</span>
 								</div>
 							)}
 						</div>
@@ -199,9 +180,9 @@ export default async function TastingPage({ params }: RouteParams) {
 													className="flex items-center gap-3 hover:text-gold transition-colors"
 												>
 													<div className="w-12 h-12 rounded-full overflow-hidden bg-zinc-800 flex-shrink-0">
-														{score.tasters?.avatar_url ? (
+														{score.tasters?.profile_pic ? (
 															<Image
-																src={score.tasters.avatar_url}
+																src={score.tasters.profile_pic}
 																alt={score.tasters.name}
 																width={48}
 																height={48}
@@ -219,30 +200,6 @@ export default async function TastingPage({ params }: RouteParams) {
 												</Link>
 												<ScoreBadge score={score.score} size="lg" />
 											</div>
-
-											{/* Detailed Scores */}
-											{(score.aroma_score || score.flavor_score || score.finish_score) && (
-												<div className="grid grid-cols-3 gap-4 mb-4">
-													{score.aroma_score !== null && (
-														<div className="text-center">
-															<div className="text-sm text-muted-foreground mb-1">Aroma</div>
-															<ScoreBadge score={score.aroma_score} size="sm" />
-														</div>
-													)}
-													{score.flavor_score !== null && (
-														<div className="text-center">
-															<div className="text-sm text-muted-foreground mb-1">Flavor</div>
-															<ScoreBadge score={score.flavor_score} size="sm" />
-														</div>
-													)}
-													{score.finish_score !== null && (
-														<div className="text-center">
-															<div className="text-sm text-muted-foreground mb-1">Finish</div>
-															<ScoreBadge score={score.finish_score} size="sm" />
-														</div>
-													)}
-												</div>
-											)}
 
 											{/* Notes */}
 											{score.notes && (

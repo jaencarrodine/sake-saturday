@@ -18,53 +18,50 @@ export type Database = {
         Row: {
           id: string
           name: string
-          name_japanese: string | null
-          brewery: string | null
           prefecture: string | null
-          type: string | null
           grade: string | null
+          type: string | null
           rice: string | null
-          polishing_ratio: number | null
-          alcohol_percentage: number | null
           smv: number | null
-          acidity: number | null
-          image_url: string | null
+          polishing_ratio: number | null
+          alc_percentage: number | null
+          opacity: string | null
+          profile: string | null
+          recommended_serving_temperatures: string | null
+          bottling_company: string | null
           created_at: string
-          updated_at: string
         }
         Insert: {
           id?: string
           name: string
-          name_japanese?: string | null
-          brewery?: string | null
           prefecture?: string | null
-          type?: string | null
           grade?: string | null
+          type?: string | null
           rice?: string | null
-          polishing_ratio?: number | null
-          alcohol_percentage?: number | null
           smv?: number | null
-          acidity?: number | null
-          image_url?: string | null
+          polishing_ratio?: number | null
+          alc_percentage?: number | null
+          opacity?: string | null
+          profile?: string | null
+          recommended_serving_temperatures?: string | null
+          bottling_company?: string | null
           created_at?: string
-          updated_at?: string
         }
         Update: {
           id?: string
           name?: string
-          name_japanese?: string | null
-          brewery?: string | null
           prefecture?: string | null
-          type?: string | null
           grade?: string | null
+          type?: string | null
           rice?: string | null
-          polishing_ratio?: number | null
-          alcohol_percentage?: number | null
           smv?: number | null
-          acidity?: number | null
-          image_url?: string | null
+          polishing_ratio?: number | null
+          alc_percentage?: number | null
+          opacity?: string | null
+          profile?: string | null
+          recommended_serving_temperatures?: string | null
+          bottling_company?: string | null
           created_at?: string
-          updated_at?: string
         }
         Relationships: []
       }
@@ -73,28 +70,22 @@ export type Database = {
           id: string
           name: string
           phone_number: string | null
-          email: string | null
-          avatar_url: string | null
+          profile_pic: string | null
           created_at: string
-          updated_at: string
         }
         Insert: {
           id?: string
           name: string
           phone_number?: string | null
-          email?: string | null
-          avatar_url?: string | null
+          profile_pic?: string | null
           created_at?: string
-          updated_at?: string
         }
         Update: {
           id?: string
           name?: string
           phone_number?: string | null
-          email?: string | null
-          avatar_url?: string | null
+          profile_pic?: string | null
           created_at?: string
-          updated_at?: string
         }
         Relationships: []
       }
@@ -102,32 +93,35 @@ export type Database = {
         Row: {
           id: string
           sake_id: string
-          tasting_date: string
-          location: string | null
-          notes: string | null
-          image_url: string | null
+          date: string
+          location_name: string | null
+          location_coordinates: unknown | null
+          front_image: string | null
+          back_image: string | null
+          created_by: string | null
           created_at: string
-          updated_at: string
         }
         Insert: {
           id?: string
           sake_id: string
-          tasting_date?: string
-          location?: string | null
-          notes?: string | null
-          image_url?: string | null
+          date?: string
+          location_name?: string | null
+          location_coordinates?: unknown | null
+          front_image?: string | null
+          back_image?: string | null
+          created_by?: string | null
           created_at?: string
-          updated_at?: string
         }
         Update: {
           id?: string
           sake_id?: string
-          tasting_date?: string
-          location?: string | null
-          notes?: string | null
-          image_url?: string | null
+          date?: string
+          location_name?: string | null
+          location_coordinates?: unknown | null
+          front_image?: string | null
+          back_image?: string | null
+          created_by?: string | null
           created_at?: string
-          updated_at?: string
         }
         Relationships: [
           {
@@ -142,7 +136,14 @@ export type Database = {
             columns: ["sake_id"]
             isOneToOne: false
             referencedRelation: "sake_rankings"
-            referencedColumns: ["sake_id"]
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tastings_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "tasters"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -152,36 +153,24 @@ export type Database = {
           tasting_id: string
           taster_id: string
           score: number
-          aroma_score: number | null
-          flavor_score: number | null
-          finish_score: number | null
           notes: string | null
           created_at: string
-          updated_at: string
         }
         Insert: {
           id?: string
           tasting_id: string
           taster_id: string
           score: number
-          aroma_score?: number | null
-          flavor_score?: number | null
-          finish_score?: number | null
           notes?: string | null
           created_at?: string
-          updated_at?: string
         }
         Update: {
           id?: string
           tasting_id?: string
           taster_id?: string
           score?: number
-          aroma_score?: number | null
-          flavor_score?: number | null
-          finish_score?: number | null
           notes?: string | null
           created_at?: string
-          updated_at?: string
         }
         Relationships: [
           {
@@ -204,14 +193,24 @@ export type Database = {
     Views: {
       sake_rankings: {
         Row: {
-          sake_id: string | null
-          sake_name: string | null
-          sake_name_japanese: string | null
-          sake_image_url: string | null
-          average_score: number | null
-          total_tastings: number | null
+          id: string | null
+          name: string | null
+          prefecture: string | null
+          grade: string | null
+          type: string | null
+          avg_score: number | null
           total_scores: number | null
-          last_tasted: string | null
+          total_tastings: number | null
+        }
+        Relationships: []
+      }
+      taster_leaderboard: {
+        Row: {
+          id: string | null
+          name: string | null
+          profile_pic: string | null
+          tastings_count: number | null
+          avg_score_given: number | null
         }
         Relationships: []
       }

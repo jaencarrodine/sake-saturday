@@ -10,76 +10,31 @@ export default async function Home() {
 	const { data: sakes } = await supabase
 		.from('sake_rankings')
 		.select('*')
-		.order('average_score', { ascending: false, nullsFirst: false })
+		.order('avg_score', { ascending: false, nullsFirst: false })
 		.limit(12);
 
 	// Fetch taster leaderboard
-	const { data: scoresData } = await supabase
-		.from('scores')
-		.select(`
-			taster_id,
-			score,
-			tasters (
-				id,
-				name,
-				avatar_url
-			)
-		`);
-
-	// Calculate taster stats
-	const tasterStats = new Map<string, { 
-		id: string;
-		name: string;
-		avatar_url: string | null;
-		scores: number[];
-	}>();
-
-	scoresData?.forEach((score: {
-		taster_id: string;
-		score: number;
-		tasters: { id: string; name: string; avatar_url: string | null } | null;
-	}) => {
-		if (!score.tasters) return;
-		
-		const tasterId = score.taster_id;
-		if (!tasterStats.has(tasterId)) {
-			tasterStats.set(tasterId, {
-				id: score.tasters.id,
-				name: score.tasters.name,
-				avatar_url: score.tasters.avatar_url,
-				scores: [],
-			});
-		}
-		tasterStats.get(tasterId)!.scores.push(score.score);
-	});
-
-	const tasterLeaderboard = Array.from(tasterStats.values())
-		.map(taster => ({
-			id: taster.id,
-			name: taster.name,
-			avatar_url: taster.avatar_url,
-			total_scores: taster.scores.length,
-			average_score: taster.scores.reduce((a, b) => a + b, 0) / taster.scores.length,
-		}))
-		.sort((a, b) => b.average_score - a.average_score)
-		.slice(0, 10);
+	const { data: tasterLeaderboard } = await supabase
+		.from('taster_leaderboard')
+		.select('*')
+		.order('avg_score_given', { ascending: false, nullsFirst: false })
+		.limit(10);
 
 	// Fetch recent tastings
 	const { data: tastings } = await supabase
 		.from('tastings')
 		.select(`
 			id,
-			tasting_date,
-			location,
-			image_url,
+			date,
+			location_name,
+			front_image,
 			sake_id,
 			sakes (
 				id,
-				name,
-				name_japanese
+				name
 			)
 		`)
-		.order('tasting_date', { ascending: false })
+		.order('date', { ascending: false })
 		.limit(6);
 
 	// Get scores for recent tastings
@@ -97,11 +52,11 @@ export default async function Home() {
 	// Calculate average scores for tastings
 	const tastingsWithScores = tastings?.map((tasting: {
 		id: string;
-		tasting_date: string;
-		location: string | null;
-		image_url: string | null;
+		date: string;
+		location_name: string | null;
+		front_image: string | null;
 		sake_id: string;
-		sakes: { id: string; name: string; name_japanese: string | null } | null;
+		sakes: { id: string; name: string } | null;
 	}) => {
 		const scores = tastingScores.filter((s: { tasting_id: string; score: number }) => s.tasting_id === tasting.id);
 		const averageScore = scores.length > 0
@@ -113,7 +68,6 @@ export default async function Home() {
 			sake: tasting.sakes ? {
 				id: tasting.sakes.id,
 				name: tasting.sakes.name,
-				name_japanese: tasting.sakes.name_japanese,
 			} : undefined,
 			average_score: averageScore,
 			score_count: scores.length,
@@ -142,7 +96,7 @@ export default async function Home() {
 					{sakes && sakes.length > 0 ? (
 						<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
 							{sakes.map((sake: any) => (
-								<SakeCard key={sake.sake_id} sake={sake} />
+								<SakeCard key={sake.id} sake={sake} />
 							))}
 						</div>
 					) : (

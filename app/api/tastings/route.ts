@@ -6,7 +6,7 @@ import { withApiAuth } from '@/lib/api/auth';
 const postHandler = async (req: NextRequest) => {
 	try {
 		const body = await req.json();
-		const { sake_id, tasting_date, location, notes, image_url } = body;
+		const { sake_id, date, location_name, front_image, back_image, created_by } = body;
 
 		if (!sake_id || typeof sake_id !== 'string') {
 			return NextResponse.json(
@@ -36,10 +36,11 @@ const postHandler = async (req: NextRequest) => {
 			.from('tastings')
 			.insert({
 				sake_id,
-				tasting_date: tasting_date || new Date().toISOString(),
-				location,
-				notes,
-				image_url,
+				date: date || new Date().toISOString().split('T')[0],
+				location_name,
+				front_image,
+				back_image,
+				created_by,
 			})
 			.select()
 			.single();
