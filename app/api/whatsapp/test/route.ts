@@ -45,10 +45,11 @@ export const GET = async () => {
 
 export const POST = async (req: NextRequest) => {
 	const requestId = `test_${Date.now()}`;
+	const testStart = Date.now();
 	
 	try {
 		const body = await req.json();
-		const { message, phone } = body;
+		const { message, phone, mediaUrls } = body;
 
 		if (!message) {
 			return NextResponse.json(
@@ -68,6 +69,7 @@ export const POST = async (req: NextRequest) => {
 			);
 		}
 
+		// Support testing with real phone numbers to test conversation history
 		const testPhone = phone || 'whatsapp:+1234567890';
 
 		console.log(JSON.stringify({
@@ -77,11 +79,66 @@ export const POST = async (req: NextRequest) => {
 			data: {
 				testPhone,
 				messagePreview: message.substring(0, 100),
+				hasMediaUrls: !!mediaUrls,
+				mediaCount: mediaUrls?.length || 0,
+				isRealPhone: phone !== undefined && phone !== 'whatsapp:+1234567890',
 			},
 			timestamp: new Date().toISOString(),
 		}));
 
-		const aiResponse = await processMessage(testPhone, message, null, requestId);
+		// If testing with real phone, query message history count
+		let historyCount = 0;
+		if (phone && phone !== 'whatsapp:+1234567890') {
+			try {
+				const supabase = createServiceClient();
+				const { count } = await supabase
+					.from('whatsapp_messages')
+					.select('*', { count: 'exact', head: true })
+					.or(`from_number.eq.${phone},to_number.eq.${phone}`);
+				historyCount = count || 0;
+				
+				console.log(JSON.stringify({
+					level: 'info',
+					requestId,
+					message: 'Testing with real phone number',
+					data: {
+						phone,
+						existingMessageCount: historyCount,
+					},
+					timestamp: new Date().toISOString(),
+				}));
+			} catch (error) {
+				console.warn(JSON.stringify({
+					level: 'warn',
+					requestId,
+					message: 'Failed to get message count for real phone',
+					error: {
+						message: error instanceof Error ? error.message : String(error),
+					},
+					timestamp: new Date().toISOString(),
+				}));
+			}
+		}
+
+		const processStart = Date.now();
+		const aiResponse = await processMessage(
+			testPhone, 
+			message, 
+			mediaUrls || null, 
+			requestId
+		);
+		const processDuration = Date.now() - processStart;
+
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId,
+			message: 'Test endpoint completed successfully',
+			data: {
+				processDurationMs: processDuration,
+				totalDurationMs: Date.now() - testStart,
+			},
+			timestamp: new Date().toISOString(),
+		}));
 
 		return NextResponse.json({
 			success: true,
@@ -89,10 +146,16 @@ export const POST = async (req: NextRequest) => {
 			input: {
 				phone: testPhone,
 				message,
+				mediaUrls: mediaUrls || null,
 			},
 			output: {
 				response: aiResponse,
 				responseLength: aiResponse.length,
+			},
+			metadata: {
+				historyCount,
+				processDurationMs: processDuration,
+				totalDurationMs: Date.now() - testStart,
 			},
 			timestamp: new Date().toISOString(),
 		});
@@ -106,6 +169,7 @@ export const POST = async (req: NextRequest) => {
 				stack: error instanceof Error ? error.stack : undefined,
 				name: error instanceof Error ? error.name : 'Unknown',
 			},
+			totalDurationMs: Date.now() - testStart,
 			timestamp: new Date().toISOString(),
 		}));
 
@@ -117,6 +181,7 @@ export const POST = async (req: NextRequest) => {
 					message: error instanceof Error ? error.message : String(error),
 					stack: error instanceof Error ? error.stack : undefined,
 				},
+				totalDurationMs: Date.now() - testStart,
 				timestamp: new Date().toISOString(),
 			},
 			{ status: 500 }
