@@ -13,6 +13,8 @@ import { useStats } from '@/hooks/useStats';
 import { getRank } from '@/lib/tasterRanks';
 import { useMemo } from 'react';
 
+export const dynamic = 'force-dynamic';
+
 export default function Home() {
 	const { data: sakes, isLoading: sakesLoading } = useSakeRankings();
 	const { data: tasterLeaderboard, isLoading: tastersLoading } = useTasterLeaderboard(8);

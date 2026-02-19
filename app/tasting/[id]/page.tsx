@@ -11,6 +11,8 @@ import { notFound } from 'next/navigation';
 import { useTastingDetail } from '@/hooks/useTastingDetail';
 import { use } from 'react';
 
+export const dynamic = 'force-dynamic';
+
 type RouteParams = {
 	params: Promise<{ id: string }>;
 };

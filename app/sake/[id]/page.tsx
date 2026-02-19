@@ -10,6 +10,8 @@ import { notFound } from 'next/navigation';
 import { useSakeDetail } from '@/hooks/useSakeDetail';
 import { use, useMemo } from 'react';
 
+export const dynamic = 'force-dynamic';
+
 type RouteParams = {
 	params: Promise<{ id: string }>;
 };
