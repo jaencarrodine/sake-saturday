@@ -259,7 +259,7 @@ const updateConversationContext = async (
 		.from('conversation_state')
 		.upsert({
 			phone_number: phoneNumber,
-			context: updatedContext,
+			context: updatedContext as any,
 			updated_at: new Date().toISOString(),
 		});
 };

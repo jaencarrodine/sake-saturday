@@ -6,9 +6,12 @@ import Frame from '@/components/Frame';
 import GridArea from '@/components/GridArea';
 import BlockGauge from '@/components/DataDisplay/BlockGauge';
 import NumberScramble from '@/components/DataDisplay/NumberScramble';
+import ImageGallery from '@/components/ImageGallery';
 import { notFound } from 'next/navigation';
 import { useTastingDetail } from '@/hooks/useTastingDetail';
 import { use } from 'react';
+
+export const dynamic = 'force-dynamic';
 
 type RouteParams = {
 	params: Promise<{ id: string }>;
@@ -24,6 +27,15 @@ export default function TastingPage({ params }: RouteParams) {
 
 	const tasting = data?.tasting;
 	const scores = data?.scores || [];
+	const images = data?.images || [];
+	
+	// Prepare gallery images
+	const galleryImages = images.map((img: any) => ({
+		id: img.id,
+		url: img.generated_image_url || img.original_image_url,
+		type: img.image_type,
+		isAiGenerated: !!img.generated_image_url,
+	}));
 
 	// Calculate statistics
 	const allScores = scores?.map((s: any) => s.score) || [];
@@ -144,7 +156,16 @@ export default function TastingPage({ params }: RouteParams) {
 					</div>
 
 					{/* Right Column - Scores */}
-					<div className="lg:col-span-8">
+					<div className="lg:col-span-8 space-y-6">
+						{/* Tasting Images Gallery */}
+						{galleryImages.length > 0 && (
+							<div>
+								<GridArea title="asting Images" titleJa="画像" highlight="T">
+									<ImageGallery images={galleryImages} />
+								</GridArea>
+							</div>
+						)}
+
 						<GridArea title="cores by Taster" titleJa="利酒師スコア" highlight="S">
 							<div className="space-y-4">
 								{scores && scores.length > 0 ? (

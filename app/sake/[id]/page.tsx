@@ -5,9 +5,12 @@ import Frame from '@/components/Frame';
 import GridArea from '@/components/GridArea';
 import BlockGauge from '@/components/DataDisplay/BlockGauge';
 import NumberScramble from '@/components/DataDisplay/NumberScramble';
+import ImageGallery from '@/components/ImageGallery';
 import { notFound } from 'next/navigation';
 import { useSakeDetail } from '@/hooks/useSakeDetail';
 import { use, useMemo } from 'react';
+
+export const dynamic = 'force-dynamic';
 
 type RouteParams = {
 	params: Promise<{ id: string }>;
@@ -24,6 +27,15 @@ export default function SakePage({ params }: RouteParams) {
 	const sake = data?.sake;
 	const tastings = data?.tastings || [];
 	const scores = data?.scores || [];
+	const images = data?.images || [];
+	
+	// Prepare gallery images
+	const galleryImages = images.map((img: any) => ({
+		id: img.id,
+		url: img.generated_image_url || img.original_image_url,
+		type: img.image_type,
+		isAiGenerated: !!img.generated_image_url,
+	}));
 
 	// Calculate statistics
 	const allScores = scores.map((s: any) => s.score);
@@ -210,6 +222,15 @@ export default function SakePage({ params }: RouteParams) {
 
 					{/* Right Column - Taster Scores & Tastings */}
 					<div className="lg:col-span-8 space-y-6">
+						{/* Sake Images Gallery */}
+						{galleryImages.length > 0 && (
+							<div>
+								<GridArea title="asting Images" titleJa="画像" highlight="T">
+									<ImageGallery images={galleryImages} />
+								</GridArea>
+							</div>
+						)}
+
 						{/* Taster Scores */}
 						<GridArea title="aster Scores" titleJa="利酒師スコア" highlight="T">
 							<div className="space-y-2">

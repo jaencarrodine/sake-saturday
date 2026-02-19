@@ -42,9 +42,17 @@ export function useTastingDetail(tastingId: string) {
       
       if (scoresError) throw scoresError;
       
+      // Get tasting images
+      const { data: tastingImages } = await supabase
+        .from("tasting_images")
+        .select("*")
+        .eq("tasting_id", tastingId)
+        .order("created_at", { ascending: true });
+      
       return {
         tasting,
         scores: scores || [],
+        images: tastingImages || [],
       };
     },
     staleTime: 1000 * 60 * 5, // 5 minutes

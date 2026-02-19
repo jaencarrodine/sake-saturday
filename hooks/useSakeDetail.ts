@@ -29,6 +29,7 @@ export function useSakeDetail(sakeId: string) {
       // Get all scores for this sake
       const tastingIds = tastings?.map(t => t.id) || [];
       let scores: any[] = [];
+      let images: any[] = [];
       
       if (tastingIds.length > 0) {
         const { data: scoresData, error: scoresError } = await supabase
@@ -49,12 +50,22 @@ export function useSakeDetail(sakeId: string) {
         
         if (scoresError) throw scoresError;
         scores = scoresData || [];
+        
+        // Get tasting images for all tastings
+        const { data: imagesData } = await supabase
+          .from("tasting_images")
+          .select("*")
+          .in("tasting_id", tastingIds)
+          .order("created_at", { ascending: true });
+        
+        images = imagesData || [];
       }
       
       return {
         sake,
         tastings: tastings || [],
         scores,
+        images,
       };
     },
     staleTime: 1000 * 60 * 5, // 5 minutes
