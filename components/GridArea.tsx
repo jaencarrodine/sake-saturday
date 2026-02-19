@@ -3,31 +3,26 @@ type GridAreaProps = {
   title: string;
   titleJa?: string;
   className?: string;
-  highlight?: string; // First letter to highlight in different color
+  highlight?: string;
 };
 
-export default function GridArea({ children, title, titleJa, className = "", highlight }: GridAreaProps) {
-  // Find the first letter to highlight (if highlight prop not provided, use first letter)
-  const firstLetter = highlight || title.charAt(0);
-  const restOfTitle = highlight ? title : title.slice(1);
-  
+export default function GridArea({ children, title, titleJa, className = "" }: GridAreaProps) {
   return (
-    <div className={`relative border border-primary ${className}`}>
-      {/* Title overlapping top border */}
-      <div className="absolute top-0 left-4 -translate-y-1/2 bg-black px-2 flex items-center gap-2">
-        <span className="text-lg md:text-xl">
-          <span className="text-sake-gold">「{firstLetter}」</span>
-          <span className="text-white">{restOfTitle}</span>
+    <div className={`panel ${className}`}>
+      {/* Panel title */}
+      <div className="px-4 pt-4 pb-2 flex items-center gap-3 flex-wrap">
+        <span className="panel-title neon-cyan">
+          [ {title.toUpperCase()} ]
         </span>
         {titleJa && (
-          <span className="text-sm md:text-base text-muted font-noto">
+          <span className="text-neon-pink text-sm font-noto" style={{ opacity: 0.8 }}>
             {titleJa}
           </span>
         )}
       </div>
       
       {/* Content */}
-      <div className="p-4 md:p-6">
+      <div className="px-4 pb-4">
         {children}
       </div>
     </div>

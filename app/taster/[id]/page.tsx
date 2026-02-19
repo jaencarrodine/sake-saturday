@@ -26,7 +26,6 @@ export default function TasterPage({ params }: RouteParams) {
 	const taster = data?.taster;
 	const scores = data?.scores || [];
 
-	// Calculate statistics
 	const allScores = scores?.map((s: any) => s.score) || [];
 	const averageScore = allScores.length > 0
 		? allScores.reduce((a: number, b: number) => a + b, 0) / allScores.length
@@ -35,7 +34,6 @@ export default function TasterPage({ params }: RouteParams) {
 	const highestScore = allScores.length > 0 ? Math.max(...allScores) : null;
 	const lowestScore = allScores.length > 0 ? Math.min(...allScores) : null;
 
-	// Get unique sakes tasted
 	const uniqueSakes = useMemo(() => {
 		return new Set(scores?.map((s: any) => s.tastings?.sake_id).filter(Boolean));
 	}, [scores]);
@@ -43,7 +41,6 @@ export default function TasterPage({ params }: RouteParams) {
 	const rank = getRank(totalSakesTasted);
 	const nextRankInfo = getNextRank(totalSakesTasted);
 
-	// Get favorite sake (most frequently tasted)
 	const favoriteSake = useMemo(() => {
 		const sakeFrequency = new Map<string, number>();
 		scores?.forEach((score: any) => {
@@ -59,7 +56,6 @@ export default function TasterPage({ params }: RouteParams) {
 		return scores?.find((s: any) => s.tastings?.sake_id === favoriteSakeId)?.tastings?.sakes;
 	}, [scores]);
 
-	// Helper function to get score label
 	const getScoreLabel = (score: number) => {
 		if (score >= 9) return "LEGENDARY";
 		if (score >= 8) return "EXCELLENT";
@@ -74,22 +70,17 @@ export default function TasterPage({ params }: RouteParams) {
 	}
 
 	return (
-		<Frame title={`【 TASTER PROFILE 利酒師 】`}>
+		<Frame title="TASTER PROFILE">
 			<div className="space-y-6">
-				{/* Navigation */}
-				<div className="text-sake-gold hover:text-primary-highlight transition-colors">
+				<div className="text-neon-cyan hover:opacity-80 transition-opacity">
 					<Link href="/">← BACK TO HOME</Link>
 				</div>
 
-				{/* Main Grid */}
 				<div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-					{/* Left Column - Taster Info */}
 					<div className="lg:col-span-4 space-y-6">
-						{/* Taster Card */}
-						<GridArea title="aster Info" titleJa="利酒師情報" highlight="T">
+						<GridArea title="TASTER INFO" titleJa="利酒師情報">
 							<div className="space-y-4">
-								{/* Avatar */}
-								<div className="w-32 h-32 mx-auto border border-primary overflow-hidden">
+								<div className="w-32 h-32 mx-auto panel overflow-hidden">
 									{taster.profile_pic ? (
 										<Image
 											src={taster.profile_pic}
@@ -106,20 +97,17 @@ export default function TasterPage({ params }: RouteParams) {
 									)}
 								</div>
 
-								{/* Name */}
 								<div className="text-center">
-									<div className="text-2xl text-sake-gold">{taster.name}</div>
-									{/* Rank Badge */}
+									<div className="text-2xl text-sake-gold font-noto">{taster.name}</div>
 									<div className="mt-2">
 										<span className="text-3xl" style={{ color: rank.color }}>{rank.kanji}</span>
 										<div className="text-sm text-muted mt-1">
 											{rank.romaji} — {rank.english}
 										</div>
 									</div>
-									{/* Rank Progress */}
 									{nextRankInfo && (
 										<div className="mt-3 border-t border-divider pt-3">
-											<div className="text-xs text-muted mb-1">
+											<div className="text-xs text-muted mb-1 uppercase">
 												NEXT: {nextRankInfo.nextRank.kanji} {nextRankInfo.nextRank.romaji} ({nextRankInfo.remaining} more)
 											</div>
 											<BlockGauge
@@ -132,19 +120,18 @@ export default function TasterPage({ params }: RouteParams) {
 										</div>
 									)}
 									{!nextRankInfo && totalSakesTasted > 0 && (
-										<div className="mt-3 text-xs text-neon-pink">★ MAX RANK ACHIEVED ★</div>
+										<div className="mt-3 text-xs neon-pink font-pixel">MAX RANK</div>
 									)}
 									{taster.phone_number && (
 										<div className="text-muted text-sm mt-2">{taster.phone_number}</div>
 									)}
 								</div>
 
-								{/* Average Score */}
 								{averageScore !== null && (
 									<div className="border-t border-divider pt-4">
-										<div className="text-muted text-sm mb-2 text-center">AVERAGE SCORE:</div>
+										<div className="text-muted text-sm mb-2 text-center uppercase">AVERAGE SCORE:</div>
 										<div className="text-center">
-											<div className="text-4xl text-neon-pink mb-2">{averageScore.toFixed(1)}</div>
+											<div className="neon-pink font-pixel text-3xl mb-2">{averageScore.toFixed(1)}</div>
 											<BlockGauge value={averageScore / 10} blockLength={15} className="justify-center" />
 										</div>
 									</div>
@@ -152,49 +139,47 @@ export default function TasterPage({ params }: RouteParams) {
 							</div>
 						</GridArea>
 
-						{/* Statistics */}
-						<GridArea title="tatistics" titleJa="統計" highlight="S">
+						<GridArea title="STATISTICS" titleJa="統計">
 							<div className="grid grid-cols-2 gap-4">
 								<div className="text-center">
-									<div className="text-3xl text-sake-gold">
+									<div className="font-pixel text-2xl">
 										<NumberScramble value={scores?.length || 0} decimals={0} isLoading={isLoading} />
 									</div>
-									<div className="text-muted text-sm mt-1">SCORES</div>
+									<div className="text-muted text-sm mt-1 uppercase tracking-wider">SCORES</div>
 								</div>
 								<div className="text-center">
-									<div className="text-3xl text-neon-pink">
+									<div className="font-pixel text-2xl neon-pink">
 										<NumberScramble value={totalSakesTasted} decimals={0} isLoading={isLoading} />
 									</div>
-									<div className="text-muted text-sm mt-1">SAKES</div>
+									<div className="text-muted text-sm mt-1 uppercase tracking-wider">SAKES</div>
 								</div>
 								{highestScore !== null && (
 									<div className="text-center">
-										<div className="text-3xl text-green">
+										<div className="font-pixel text-2xl text-green">
 											<NumberScramble value={highestScore} decimals={1} isLoading={isLoading} />
 										</div>
-										<div className="text-muted text-sm mt-1">HIGHEST</div>
+										<div className="text-muted text-sm mt-1 uppercase tracking-wider">HIGHEST</div>
 									</div>
 								)}
 								{lowestScore !== null && (
 									<div className="text-center">
-										<div className="text-3xl text-red">
+										<div className="font-pixel text-2xl text-red">
 											<NumberScramble value={lowestScore} decimals={1} isLoading={isLoading} />
 										</div>
-										<div className="text-muted text-sm mt-1">LOWEST</div>
+										<div className="text-muted text-sm mt-1 uppercase tracking-wider">LOWEST</div>
 									</div>
 								)}
 							</div>
 						</GridArea>
 
-						{/* Favorite Sake */}
 						{favoriteSake && (
-							<GridArea title="ost Tasted" titleJa="最多試飲" highlight="M">
+							<GridArea title="MOST TASTED" titleJa="最多試飲">
 								<Link
 									href={`/sake/${favoriteSake.id}`}
-									className="block hover:text-primary-highlight transition-colors"
+									className="block hover:opacity-80 transition-opacity"
 								>
 									<div className="space-y-2">
-										<div className="text-sake-gold text-lg">{favoriteSake.name}</div>
+										<div className="text-sake-gold text-lg font-noto">{favoriteSake.name}</div>
 										<div className="text-neon-pink text-sm">→ VIEW SAKE DETAILS</div>
 									</div>
 								</Link>
@@ -202,9 +187,8 @@ export default function TasterPage({ params }: RouteParams) {
 						)}
 					</div>
 
-					{/* Right Column - Score History */}
 					<div className="lg:col-span-8">
-						<GridArea title="core History" titleJa="スコア履歴" highlight="S">
+						<GridArea title="SCORE HISTORY" titleJa="スコア履歴">
 							<div className="space-y-4">
 								{scores && scores.length > 0 ? (
 									scores.map((score: any) => {
@@ -220,14 +204,14 @@ export default function TasterPage({ params }: RouteParams) {
 										return (
 											<div
 												key={score.id}
-												className="border border-divider p-4 hover:border-primary-highlight transition-colors"
+												className="panel p-4 hover:border-neon-cyan transition-colors"
 											>
 												<div className="flex items-start justify-between mb-3">
 													<div className="flex-1 min-w-0">
 														{sake && (
 															<Link
 																href={`/sake/${sake.id}`}
-																className="text-white text-lg hover:text-primary-highlight transition-colors truncate block"
+																className="text-white text-lg hover:text-neon-cyan transition-colors truncate block font-noto"
 															>
 																{sake.name}
 															</Link>
@@ -235,14 +219,14 @@ export default function TasterPage({ params }: RouteParams) {
 														{tastingDate && (
 															<Link
 																href={`/tasting/${score.tasting_id}`}
-																className="text-muted text-sm hover:text-primary-highlight transition-colors mt-1 block"
+																className="text-muted text-sm hover:text-neon-cyan transition-colors mt-1 block"
 															>
 																{tastingDate}
 															</Link>
 														)}
 													</div>
 													<div className="text-right ml-4">
-														<div className={`text-3xl ${
+														<div className={`font-pixel text-2xl ${
 															score.score >= 8 ? 'text-green' :
 															score.score >= 7 ? 'text-sake-gold' :
 															score.score >= 6 ? 'text-white' :
@@ -250,18 +234,16 @@ export default function TasterPage({ params }: RouteParams) {
 														}`}>
 															{score.score.toFixed(1)}
 														</div>
-														<div className="text-sm text-muted">{getScoreLabel(score.score)}</div>
+														<div className="text-sm text-muted uppercase">{getScoreLabel(score.score)}</div>
 													</div>
 												</div>
 
-												{/* Block Gauge */}
 												<BlockGauge value={score.score / 10} blockLength={20} className="mb-3" />
 
-												{/* Notes */}
 												{score.notes && (
 													<div className="border-t border-divider pt-3 mt-3">
-														<div className="text-muted text-sm mb-2">NOTES:</div>
-														<div className="text-white text-sm whitespace-pre-wrap font-mono">
+														<div className="text-muted text-sm mb-2 uppercase">NOTES:</div>
+														<div className="text-white text-sm whitespace-pre-wrap">
 															{score.notes}
 														</div>
 													</div>
