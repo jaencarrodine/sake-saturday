@@ -179,14 +179,14 @@ export const processMessage = async (
 			timestamp: new Date().toISOString(),
 		}));
 
-		const aiStart = Date.now();
-		const result = await generateText({
-			model: anthropic(CLAUDE_MODEL),
-			system: systemPrompt,
-			messages,
-			tools: sakeTools,
-			stopWhen: stepCountIs(5),
-		});
+	const aiStart = Date.now();
+	const result = await generateText({
+		model: anthropic(CLAUDE_MODEL),
+		system: systemPrompt,
+		messages,
+		tools: sakeTools,
+		stopWhen: stepCountIs(5),
+	});
 
 		console.log(JSON.stringify({
 			level: 'info',

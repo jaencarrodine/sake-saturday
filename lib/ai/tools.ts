@@ -19,62 +19,66 @@ export const sakeTools = {
 			smv: z.number().optional().describe('Sake Meter Value (sweetness/dryness)'),
 			bottling_company: z.string().optional().describe('Brewery/bottling company name'),
 		}),
-		execute: async (params: {
-			name: string;
-			prefecture?: string;
-			grade?: string;
-			type?: string;
-			rice?: string;
-			polishing_ratio?: number;
-			alc_percentage?: number;
-			smv?: number;
-			bottling_company?: string;
-		}) => {
-			const { name, prefecture, grade, type, rice, polishing_ratio, alc_percentage, smv, bottling_company } = params;
-			const supabase = createServiceClient();
+	execute: async (params: {
+		name: string;
+		prefecture?: string;
+		grade?: string;
+		type?: string;
+		rice?: string;
+		polishing_ratio?: number;
+		alc_percentage?: number;
+		smv?: number;
+		bottling_company?: string;
+	}) => {
+		console.log('[Tool: identify_sake] Executing with params:', JSON.stringify(params));
+		const { name, prefecture, grade, type, rice, polishing_ratio, alc_percentage, smv, bottling_company } = params;
+		const supabase = createServiceClient();
 
-			const { data: existingSake, error: findError } = await supabase
-				.from('sakes')
-				.select('*')
-				.ilike('name', name)
-				.single();
+		const { data: existingSake, error: findError } = await supabase
+			.from('sakes')
+			.select('*')
+			.ilike('name', name)
+			.single();
 
-			if (!findError && existingSake) {
-				return {
-					success: true,
-					sake: existingSake,
-					created: false,
-					message: 'Found existing sake in database',
-				};
-			}
-
-			const { data: newSake, error: createError } = await supabase
-				.from('sakes')
-				.insert({
-					name,
-					prefecture,
-					grade,
-					type,
-					rice,
-					polishing_ratio,
-					alc_percentage,
-					smv,
-					bottling_company,
-				})
-				.select()
-				.single();
-
-			if (createError) {
-				throw new Error(`Failed to create sake: ${createError.message}`);
-			}
-
+		if (!findError && existingSake) {
+			console.log('[Tool: identify_sake] Found existing sake:', existingSake.id);
 			return {
 				success: true,
-				sake: newSake,
-				created: true,
-				message: 'Created new sake in database',
+				sake: existingSake,
+				created: false,
+				message: 'Found existing sake in database',
 			};
-		},
+		}
+
+		const { data: newSake, error: createError } = await supabase
+			.from('sakes')
+			.insert({
+				name,
+				prefecture,
+				grade,
+				type,
+				rice,
+				polishing_ratio,
+				alc_percentage,
+				smv,
+				bottling_company,
+			})
+			.select()
+			.single();
+
+		if (createError) {
+			console.error('[Tool: identify_sake] Error creating sake:', createError.message);
+			throw new Error(`Failed to create sake: ${createError.message}`);
+		}
+
+		console.log('[Tool: identify_sake] Created new sake:', newSake.id);
+		return {
+			success: true,
+			sake: newSake,
+			created: true,
+			message: 'Created new sake in database',
+		};
+	},
 	},
 
 	create_tasting: {
@@ -86,47 +90,53 @@ export const sakeTools = {
 			location_name: z.string().optional().describe('Name of the location where tasting is happening'),
 			created_by_phone: z.string().optional().describe('Phone number of the person creating the tasting'),
 		}),
-		execute: async (params: {
-			sake_id: string;
-			date?: string;
-			location_name?: string;
-			created_by_phone?: string;
-		}) => {
-			const { sake_id, date, location_name, created_by_phone } = params;
-			const supabase = createServiceClient();
-			const tastingDate = date || new Date().toISOString().split('T')[0];
+	execute: async (params: {
+		sake_id: string;
+		date?: string;
+		location_name?: string;
+		created_by_phone?: string;
+	}) => {
+		console.log('[Tool: create_tasting] Executing with params:', JSON.stringify(params));
+		const { sake_id, date, location_name, created_by_phone } = params;
+		const supabase = createServiceClient();
+		const tastingDate = date || new Date().toISOString().split('T')[0];
 
-			let createdById: string | undefined;
-			if (created_by_phone) {
-				const { data: taster } = await supabase
-					.from('tasters')
-					.select('id')
-					.eq('phone_number', created_by_phone)
-					.single();
-				createdById = taster?.id;
-			}
-
-			const { data: newTasting, error: createError } = await supabase
-				.from('tastings')
-				.insert({
-					sake_id,
-					date: tastingDate,
-					location_name,
-					created_by: createdById,
-				})
-				.select()
+		let createdById: string | undefined;
+		if (created_by_phone) {
+			const { data: taster } = await supabase
+				.from('tasters')
+				.select('id')
+				.eq('phone_number', created_by_phone)
 				.single();
+			createdById = taster?.id;
+		}
 
-			if (createError) {
-				throw new Error(`Failed to create tasting: ${createError.message}`);
-			}
+		const { data: newTasting, error: createError } = await supabase
+			.from('tastings')
+			.insert({
+				sake_id,
+				date: tastingDate,
+				location_name,
+				created_by: createdById,
+			})
+			.select()
+			.single();
 
-			return {
-				success: true,
-				tasting: newTasting,
-				message: 'Created new tasting session',
-			};
-		},
+		if (createError) {
+			console.error('[Tool: create_tasting] Error creating tasting:', createError.message);
+			throw new Error(`Failed to create tasting: ${createError.message}`);
+		}
+
+		const tastingUrl = `https://sakesatur.day/tasting/${newTasting.id}`;
+		console.log('[Tool: create_tasting] Created new tasting:', newTasting.id, 'URL:', tastingUrl);
+
+		return {
+			success: true,
+			tasting: newTasting,
+			tasting_url: tastingUrl,
+			message: `Created new tasting session. View at: ${tastingUrl}`,
+		};
+	},
 	},
 
 	record_scores: {
@@ -143,58 +153,60 @@ export const sakeTools = {
 				})
 			).describe('Array of scores from different tasters'),
 		}),
-		execute: async (params: {
-			tasting_id: string;
-			scores: Array<{
-				taster_name: string;
-				taster_phone?: string;
-				score: number;
-				notes?: string;
-			}>;
-		}) => {
-			const { tasting_id, scores } = params;
-			const supabase = createServiceClient();
-			const processedScores = [];
+	execute: async (params: {
+		tasting_id: string;
+		scores: Array<{
+			taster_name: string;
+			taster_phone?: string;
+			score: number;
+			notes?: string;
+		}>;
+	}) => {
+		console.log('[Tool: record_scores] Executing with params:', JSON.stringify(params));
+		const { tasting_id, scores } = params;
+		const supabase = createServiceClient();
+		const processedScores = [];
 
-			for (const scoreInput of scores) {
-				const tasterResult = await lookupTasterHelper(supabase, {
-					name: scoreInput.taster_name,
-					phone_number: scoreInput.taster_phone,
-				});
+		for (const scoreInput of scores) {
+			const tasterResult = await lookupTasterHelper(supabase, {
+				name: scoreInput.taster_name,
+				phone_number: scoreInput.taster_phone,
+			});
 
-				const taster = tasterResult.taster;
+			const taster = tasterResult.taster;
 
-				const { data: score, error: scoreError } = await supabase
-					.from('scores')
-					.upsert(
-						{
-							tasting_id,
-							taster_id: taster.id,
-							score: scoreInput.score,
-							notes: scoreInput.notes,
-						},
-						{
-							onConflict: 'tasting_id,taster_id',
-						}
-					)
-					.select()
-					.single();
+			const { data: score, error: scoreError } = await supabase
+				.from('scores')
+				.upsert(
+					{
+						tasting_id,
+						taster_id: taster.id,
+						score: scoreInput.score,
+						notes: scoreInput.notes,
+					},
+					{
+						onConflict: 'tasting_id,taster_id',
+					}
+				)
+				.select()
+				.single();
 
-				if (scoreError) {
-					console.error('Error recording score:', scoreError);
-					continue;
-				}
-
-				processedScores.push(score);
+			if (scoreError) {
+				console.error('[Tool: record_scores] Error recording score:', scoreError);
+				continue;
 			}
 
-			return {
-				success: true,
-				scores: processedScores,
-				count: processedScores.length,
-				message: `Recorded ${processedScores.length} score(s)`,
-			};
-		},
+			processedScores.push(score);
+		}
+
+		console.log('[Tool: record_scores] Recorded scores:', processedScores.length);
+		return {
+			success: true,
+			scores: processedScores,
+			count: processedScores.length,
+			message: `Recorded ${processedScores.length} score(s)`,
+		};
+	},
 	},
 
 	lookup_taster: {
@@ -204,14 +216,17 @@ export const sakeTools = {
 			name: z.string().describe('Name of the taster'),
 			phone_number: z.string().optional().describe('Phone number of the taster'),
 		}),
-		execute: async (params: {
-			name: string;
-			phone_number?: string;
-		}) => {
-			const { name, phone_number } = params;
-			const supabase = createServiceClient();
-			return lookupTasterHelper(supabase, { name, phone_number });
-		},
+	execute: async (params: {
+		name: string;
+		phone_number?: string;
+	}) => {
+		console.log('[Tool: lookup_taster] Executing with params:', JSON.stringify(params));
+		const { name, phone_number } = params;
+		const supabase = createServiceClient();
+		const result = await lookupTasterHelper(supabase, { name, phone_number });
+		console.log('[Tool: lookup_taster] Result:', result.created ? 'Created new taster' : 'Found existing taster', result.taster.id);
+		return result;
+	},
 	},
 
 	get_tasting_history: {
@@ -222,51 +237,54 @@ export const sakeTools = {
 			taster_id: z.string().optional().describe('Filter by specific taster ID'),
 			limit: z.number().optional().describe('Maximum number of tastings to return (default 10)'),
 		}),
-		execute: async (params: {
-			sake_id?: string;
-			taster_id?: string;
-			limit?: number;
-		}) => {
-			const { sake_id, taster_id, limit } = params;
-			const supabase = createServiceClient();
-			const queryLimit = limit || 10;
+	execute: async (params: {
+		sake_id?: string;
+		taster_id?: string;
+		limit?: number;
+	}) => {
+		console.log('[Tool: get_tasting_history] Executing with params:', JSON.stringify(params));
+		const { sake_id, taster_id, limit } = params;
+		const supabase = createServiceClient();
+		const queryLimit = limit || 10;
 
-			let query = supabase
-				.from('tastings')
-				.select(
-					`
-					*,
-					sakes:sake_id (id, name, grade, prefecture),
-					scores (
-						score,
-						notes,
-						tasters:taster_id (id, name)
-					)
+		let query = supabase
+			.from('tastings')
+			.select(
 				`
+				*,
+				sakes:sake_id (id, name, grade, prefecture),
+				scores (
+					score,
+					notes,
+					tasters:taster_id (id, name)
 				)
-				.order('date', { ascending: false })
-				.limit(queryLimit);
+			`
+			)
+			.order('date', { ascending: false })
+			.limit(queryLimit);
 
-			if (sake_id) {
-				query = query.eq('sake_id', sake_id);
-			}
+		if (sake_id) {
+			query = query.eq('sake_id', sake_id);
+		}
 
-			if (taster_id) {
-				query = query.eq('scores.taster_id', taster_id);
-			}
+		if (taster_id) {
+			query = query.eq('scores.taster_id', taster_id);
+		}
 
-			const { data, error } = await query;
+		const { data, error } = await query;
 
-			if (error) {
-				throw new Error(`Failed to fetch tasting history: ${error.message}`);
-			}
+		if (error) {
+			console.error('[Tool: get_tasting_history] Error fetching history:', error.message);
+			throw new Error(`Failed to fetch tasting history: ${error.message}`);
+		}
 
-			return {
-				success: true,
-				tastings: data,
-				count: data?.length || 0,
-			};
-		},
+		console.log('[Tool: get_tasting_history] Fetched tastings:', data?.length || 0);
+		return {
+			success: true,
+			tastings: data,
+			count: data?.length || 0,
+		};
+	},
 	},
 
 	get_sake_rankings: {
@@ -276,32 +294,35 @@ export const sakeTools = {
 			limit: z.number().optional().describe('Maximum number of sakes to return (default 10)'),
 			min_tastings: z.number().optional().describe('Minimum number of tastings required to be included (default 1)'),
 		}),
-		execute: async (params: {
-			limit?: number;
-			min_tastings?: number;
-		}) => {
-			const { limit, min_tastings } = params;
-			const supabase = createServiceClient();
-			const queryLimit = limit || 10;
-			const minTastingsCount = min_tastings || 1;
+	execute: async (params: {
+		limit?: number;
+		min_tastings?: number;
+	}) => {
+		console.log('[Tool: get_sake_rankings] Executing with params:', JSON.stringify(params));
+		const { limit, min_tastings } = params;
+		const supabase = createServiceClient();
+		const queryLimit = limit || 10;
+		const minTastingsCount = min_tastings || 1;
 
-			const { data, error } = await supabase
-				.from('sake_rankings')
-				.select('*')
-				.gte('total_tastings', minTastingsCount)
-				.order('avg_score', { ascending: false, nullsFirst: false })
-				.limit(queryLimit);
+		const { data, error } = await supabase
+			.from('sake_rankings')
+			.select('*')
+			.gte('total_tastings', minTastingsCount)
+			.order('avg_score', { ascending: false, nullsFirst: false })
+			.limit(queryLimit);
 
-			if (error) {
-				throw new Error(`Failed to fetch sake rankings: ${error.message}`);
-			}
+		if (error) {
+			console.error('[Tool: get_sake_rankings] Error fetching rankings:', error.message);
+			throw new Error(`Failed to fetch sake rankings: ${error.message}`);
+		}
 
-			return {
-				success: true,
-				rankings: data,
-				count: data?.length || 0,
-			};
-		},
+		console.log('[Tool: get_sake_rankings] Fetched rankings:', data?.length || 0);
+		return {
+			success: true,
+			rankings: data,
+			count: data?.length || 0,
+		};
+	},
 	},
 };
 
