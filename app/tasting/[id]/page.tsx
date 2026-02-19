@@ -6,6 +6,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
+import ImageGallery from "@/components/ImageGallery";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -41,8 +42,23 @@ export default async function TastingPage({ params }: Props) {
     notFound();
   }
 
+  // Fetch tasting images
+  const { data: tastingImages } = await supabase
+    .from("tasting_images")
+    .select("*")
+    .eq("tasting_id", id)
+    .order("created_at", { ascending: true });
+
   // Type the tasting data
   const tastingData = tasting as any;
+
+  // Prepare gallery images
+  const galleryImages = tastingImages?.map((img: any) => ({
+    id: img.id,
+    url: img.generated_image_url || img.original_image_url,
+    type: img.image_type,
+    isAiGenerated: !!img.generated_image_url,
+  })) || [];
 
   // Calculate average score
   const scores = tastingData.tasting_scores.map((s: any) => s.score);
@@ -133,6 +149,14 @@ export default async function TastingPage({ params }: Props) {
               <p className="text-sm">{tastingData.notes}</p>
             </CardContent>
           </Card>
+        )}
+
+        {/* Tasting Images Gallery */}
+        {galleryImages.length > 0 && (
+          <div>
+            <h2 className="text-2xl font-bold mb-4">Tasting Images</h2>
+            <ImageGallery images={galleryImages} />
+          </div>
         )}
 
         {/* Individual Scores */}

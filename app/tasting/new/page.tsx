@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { useRouter } from "next/navigation";
+import ImageUpload from "@/components/ImageUpload";
+import GenerateArtButton from "@/components/GenerateArtButton";
 
 type SakeFormData = {
   name: string;
@@ -34,11 +36,20 @@ type TasterData = {
   notes: string;
 };
 
+type AdditionalImage = {
+  id: string;
+  originalUrl: string;
+  generatedUrl?: string;
+  type: "bottle_art" | "group_transform";
+};
+
 export default function NewTasting() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [frontImage, setFrontImage] = useState<string>("");
   const [backImage, setBackImage] = useState<string>("");
+  const [frontImageGenerated, setFrontImageGenerated] = useState<string>("");
+  const [additionalImages, setAdditionalImages] = useState<AdditionalImage[]>([]);
   const [sakeMode, setSakeMode] = useState<"new" | "existing">("new");
   const [selectedSakeId, setSelectedSakeId] = useState<string>("");
   const [sakeData, setSakeData] = useState<SakeFormData>({
@@ -67,6 +78,7 @@ export default function NewTasting() {
   const [location, setLocation] = useState("");
   const [tastingNotes, setTastingNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [tempTastingId, setTempTastingId] = useState<string>("");
 
   const handleImageUpload = (type: "front" | "back", e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -92,6 +104,27 @@ export default function NewTasting() {
 
   const removeTaster = (index: number) => {
     setTasters(tasters.filter((_, i) => i !== index));
+  };
+
+  const addAdditionalImage = (imageData: string, type: "bottle_art" | "group_transform") => {
+    const newImage: AdditionalImage = {
+      id: `img-${Date.now()}-${Math.random()}`,
+      originalUrl: imageData,
+      type,
+    };
+    setAdditionalImages([...additionalImages, newImage]);
+  };
+
+  const removeAdditionalImage = (id: string) => {
+    setAdditionalImages(additionalImages.filter((img) => img.id !== id));
+  };
+
+  const handleImageGenerated = (imageId: string, generatedUrl: string) => {
+    setAdditionalImages(
+      additionalImages.map((img) =>
+        img.id === imageId ? { ...img, generatedUrl } : img
+      )
+    );
   };
 
   const handleSubmit = async () => {
@@ -167,7 +200,7 @@ export default function NewTasting() {
       {/* Progress indicator */}
       <div className="mb-8">
         <div className="flex items-center gap-2 mb-2">
-          {[1, 2, 3, 4, 5].map((s) => (
+          {[1, 2, 3, 4, 5, 6].map((s) => (
             <div
               key={s}
               className={`flex-1 h-2 rounded-full ${
@@ -177,7 +210,7 @@ export default function NewTasting() {
           ))}
         </div>
         <p className="text-sm text-muted-foreground">
-          Step {step} of 5
+          Step {step} of 6
         </p>
       </div>
 
@@ -201,8 +234,16 @@ export default function NewTasting() {
                 className="mt-2"
               />
               {frontImage && (
-                <div className="mt-4 relative w-full h-64 bg-muted rounded-md overflow-hidden">
-                  <img src={frontImage} alt="Front" className="object-contain w-full h-full" />
+                <div className="mt-4 space-y-4">
+                  <div className="relative w-full h-64 bg-muted rounded-md overflow-hidden">
+                    <img src={frontImage} alt="Front" className="object-contain w-full h-full" />
+                  </div>
+                  {frontImageGenerated && (
+                    <div className="relative w-full h-64 bg-muted rounded-md overflow-hidden border-2 border-primary">
+                      <Badge className="absolute top-2 left-2">✨ Ukiyo-e Style</Badge>
+                      <img src={frontImageGenerated} alt="AI Generated" className="object-contain w-full h-full" />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -516,6 +557,108 @@ export default function NewTasting() {
                 Back
               </Button>
               <Button onClick={() => setStep(5)} className="flex-1">
+                Next: Additional Images
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Step 5: Additional Images */}
+      {step === 5 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Additional Images (Optional)</CardTitle>
+            <CardDescription>
+              Add group photos or additional bottle shots. Generate AI-transformed images!
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-4">
+              <div>
+                <Label className="mb-2 block">Upload Group Photo</Label>
+                <ImageUpload
+                  onImageSelect={(imageData) => addAdditionalImage(imageData, "group_transform")}
+                  label="Upload a group photo to transform"
+                />
+              </div>
+
+              <div>
+                <Label className="mb-2 block">Upload Additional Bottle Photo</Label>
+                <ImageUpload
+                  onImageSelect={(imageData) => addAdditionalImage(imageData, "bottle_art")}
+                  label="Upload another bottle photo for ukiyo-e art"
+                />
+              </div>
+            </div>
+
+            {additionalImages.length > 0 && (
+              <div className="space-y-4">
+                <Label>Uploaded Images ({additionalImages.length})</Label>
+                {additionalImages.map((img) => (
+                  <div key={img.id} className="border rounded-lg p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <Badge variant="outline">
+                        {img.type === "bottle_art" ? "Bottle Photo" : "Group Photo"}
+                      </Badge>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => removeAdditionalImage(img.id)}
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-2">Original</p>
+                        <div className="relative aspect-square bg-muted rounded-md overflow-hidden">
+                          <img
+                            src={img.originalUrl}
+                            alt="Original"
+                            className="object-cover w-full h-full"
+                          />
+                        </div>
+                      </div>
+                      {img.generatedUrl ? (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-2">✨ AI Generated</p>
+                          <div className="relative aspect-square bg-muted rounded-md overflow-hidden border-2 border-primary">
+                            <img
+                              src={img.generatedUrl}
+                              alt="AI Generated"
+                              className="object-cover w-full h-full"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-center">
+                          {tempTastingId ? (
+                            <GenerateArtButton
+                              imageUrl={img.originalUrl}
+                              imageType={img.type}
+                              tastingId={tempTastingId}
+                              onGenerated={(url) => handleImageGenerated(img.id, url)}
+                              onError={(error) => alert(error)}
+                            />
+                          ) : (
+                            <p className="text-sm text-muted-foreground text-center px-4">
+                              Complete tasting submission to generate AI art
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setStep(4)} className="flex-1">
+                Back
+              </Button>
+              <Button onClick={() => setStep(6)} className="flex-1">
                 Next: Review
               </Button>
             </div>
@@ -523,8 +666,8 @@ export default function NewTasting() {
         </Card>
       )}
 
-      {/* Step 5: Review and Submit */}
-      {step === 5 && (
+      {/* Step 6: Review and Submit */}
+      {step === 6 && (
         <Card>
           <CardHeader>
             <CardTitle>Review & Submit</CardTitle>
@@ -565,7 +708,7 @@ export default function NewTasting() {
             )}
 
             <div className="flex gap-2">
-              <Button variant="outline" onClick={() => setStep(4)} className="flex-1">
+              <Button variant="outline" onClick={() => setStep(5)} className="flex-1">
                 Back
               </Button>
               <Button
