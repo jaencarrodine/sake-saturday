@@ -21,7 +21,66 @@ CREATE INDEX idx_tasters_phone_hash ON tasters(phone_hash);
 
 ---
 
-## 2. Post-Tasting Profile Setup Flow
+## 2. Multi-Message Agent Flow
+
+**Problem:** Currently the agent sends one reply per interaction. Real conversations need multiple messages (acknowledge → process → respond → ask follow-up).
+
+**Approach:**
+- Refactor `processAndReply` to support sending multiple Twilio messages per interaction
+- Give tools the ability to send intermediate messages (e.g., "Analyzing your sake photo..." before running the analysis)
+- Flow example for sake submission:
+  1. User sends sake photo
+  2. Agent: "Let me take a look at that bottle..." (immediate acknowledgment)
+  3. Agent runs vision analysis + sake research tool
+  4. Agent: "Found it! This is Dewazakura Oka Ginjo from Yamagata..." (summary with details)
+  5. Agent: "I filled in what I could find. Anything you want to add or correct?" (follow-up)
+- The Twilio client should be accessible from tool execute functions, or tools return a `messages: string[]` array that gets sent sequentially
+
+---
+
+## 3. Sake Research & Auto-Fill
+
+**Problem:** When a sake is identified (from photo or name), we only store what the user tells us. We should research and fill as many fields as possible.
+
+**Approach:**
+- Add a `research_sake` tool that takes a sake name/details and searches for:
+  - Brewery/bottling company
+  - Prefecture
+  - Grade/type
+  - Rice variety
+  - Polishing ratio
+  - ABV
+  - SMV
+  - Tasting notes / flavor profile
+- Use the AI model's knowledge + optionally web search
+- Auto-fill missing fields in the sake record
+- Present the researched info to the user for confirmation
+
+---
+
+## 4. Admin Privileges (Jaen's Number)
+
+**Problem:** Need an admin who can manage all data via WhatsApp.
+
+**Jaen's number:** `whatsapp:+14439941537`
+
+**Approach:**
+- Define `ADMIN_NUMBERS` constant (or env var) with admin phone numbers
+- In the webhook handler, check if the sender is an admin
+- Pass `isAdmin` flag to `processMessage`
+- **Admin-only tools** (only loaded when `isAdmin === true`):
+  - `admin_edit_sake` — update any sake field
+  - `admin_edit_taster` — update any taster profile (name, rank override, etc.)
+  - `admin_edit_tasting` — modify tasting details, scores, delete tastings
+  - `admin_delete_record` — delete sakes, tasters, tastings, scores
+  - `admin_list_all` — list all records in any table with filters
+- Regular users only get the standard tools (identify, create tasting, record scores, etc.)
+- Admin tools include the standard tools too
+- System prompt gets an admin addendum when `isAdmin` is true
+
+---
+
+## 5. Post-Tasting Profile Setup Flow
 
 **Problem:** Tastings have tasters by name only, no profiles set up, no way to connect them later.
 
@@ -32,7 +91,7 @@ CREATE INDEX idx_tasters_phone_hash ON tasters(phone_hash);
    - Fuzzy-match against existing tasters (name similarity + same tasting group history) to avoid duplicates
    - Ask "Is this the same Ade from the Feb 17 tasting?" if ambiguous
    - Optionally invite them via WhatsApp link to claim their profile
-4. Generate rank-based AI profile pics for newly set up profiles (see #4)
+4. Generate rank-based AI profile pics for newly set up profiles (see #7)
 
 **Dedup logic:**
 - Exact name match → same person (confirm with creator)
@@ -41,7 +100,7 @@ CREATE INDEX idx_tasters_phone_hash ON tasters(phone_hash);
 
 ---
 
-## 3. Rank Awareness & Level-Up Notifications
+## 6. Rank Awareness & Level-Up Notifications
 
 **Problem:** The rank system exists in code (`lib/tasterRanks.ts`) but the agent doesn't use it.
 
@@ -73,7 +132,7 @@ CREATE INDEX idx_tasters_phone_hash ON tasters(phone_hash);
    Next milestones:
    Ade: 2 more to Ashigaru
    ```
-4. If someone hit a new rank → trigger AI profile pic generation
+4. If someone hit a new rank → trigger AI profile pic generation + share in chat
 
 **New Sake Sensei tools:**
 - `get_taster_rank` — returns current rank, progress, next milestone
@@ -81,17 +140,21 @@ CREATE INDEX idx_tasters_phone_hash ON tasters(phone_hash);
 
 ---
 
-## 4. Rank-Based AI Profile Pictures
-
-**Problem:** Tasters have no profile pics. The rank system is cool but purely text.
+## 7. AI Image System (Unified)
 
 **Art Direction:** Cyberpunk Edo Pixel Art (see `STYLE_GUIDE.md`)
 
-**Approach:**
-- When a taster levels up OR sets up their profile for the first time:
-  1. If they have a photo (selfie, group photo crop) → use it as source
-  2. Generate via Gemini (Nano Banana): rank-specific cyberpunk Edo prompt
-  3. Store as their profile pic, replacing the old one on level-up
+Three types of AI-generated images, all following the same style guide:
+
+### 7a. Profile Pictures (Rank-Based)
+
+**Flow:**
+1. When a new taster is created, the agent asks for a **base photo** (selfie/photo of the person)
+2. Base photo is stored as `source_photo_url` on the taster
+3. Agent generates their first profile pic using the base photo + their current rank prompt
+4. **Every time their rank changes**, a new profile pic is generated with the new rank's scene
+5. Generated image is shared in the WhatsApp chat and set as their profile pic
+6. If no base photo provided, generate a stylized avatar (silhouette/symbolic, no face)
 
 **Rank-specific scenes:**
 | Rank | Scene |
@@ -104,13 +167,35 @@ CREATE INDEX idx_tasters_phone_hash ON tasters(phone_hash);
 | Shōgun | Warlord in mech-enhanced armor, floating tactical displays, red and cyan |
 | Tennō | Divine emperor on golden throne, holographic light, floating neon kanji |
 
-- If no source photo: generate stylized avatar (silhouette/symbolic, no face)
-- Store both source photo and generated pic for re-generation on level-up
+### 7b. Sake Bottle Art (AI-Generated)
+
+- When a sake is added, generate a stylized Cyberpunk Edo bottle portrait
+- Uses the bottle photo (if provided) as source for the AI edit
+- Displayed on the sake detail page alongside/instead of the raw photo
+- Prompt: base style prefix + "sake bottle portrait, dramatic lighting, the bottle rendered as a glowing artifact with neon label, circuit-pattern condensation, cyberpunk bar counter setting"
+
+### 7c. Tasting Images (Group Photo Transform)
+
+- Users submit group photos from tastings
+- AI transforms them into Cyberpunk Edo scenes (samurai era, neon dojo, etc.)
+- Displayed on the tasting page
+- Agent shares the transformed image in the WhatsApp chat after generation
+
+### Image Generation Infrastructure
+
+- Use Gemini (Nano Banana Pro) API for all image generation
+- Store images in Supabase Storage
+- `tasting_images` table already exists for tasting images
+- Add `ai_bottle_image_url` to `sakes` table
+- Add `source_photo_url`, `ai_profile_image_url`, `rank_at_generation` to `tasters` table
+- **Agent sends generated images via Twilio MMS** in the WhatsApp chat so users see results immediately
 
 **DB Changes:**
 ```sql
 ALTER TABLE tasters ADD COLUMN source_photo_url TEXT;
+ALTER TABLE tasters ADD COLUMN ai_profile_image_url TEXT;
 ALTER TABLE tasters ADD COLUMN rank_at_generation TEXT;
+ALTER TABLE sakes ADD COLUMN ai_bottle_image_url TEXT;
 ALTER TABLE tastings ADD COLUMN summary JSONB;
 ```
 
@@ -118,11 +203,14 @@ ALTER TABLE tastings ADD COLUMN summary JSONB;
 
 ## Implementation Order
 
-1. **Phone linking + dedup** — foundation for everything else
-2. **Rank awareness in Sake Sensei** — new tools + prompts
-3. **Post-tasting summary with level-ups** — uses rank awareness
-4. **Profile setup flow** — uses phone linking + dedup
-5. **Cyberpunk Edo profile pic generation** — uses rank awareness + image gen
+1. **Admin privileges** — quick win, needed for testing
+2. **Multi-message agent flow** — foundation for better UX
+3. **Phone linking + dedup** — foundation for profiles
+4. **Sake research & auto-fill** — better data quality
+5. **Rank awareness in Sake Sensei** — new tools + prompts
+6. **Post-tasting summary with level-ups** — uses rank awareness
+7. **Profile setup flow** — uses phone linking + dedup
+8. **AI image system** — profile pics, sake art, tasting transforms
 
 ---
 
@@ -131,8 +219,16 @@ ALTER TABLE tastings ADD COLUMN summary JSONB;
 - [x] Art direction chosen: Cyberpunk Edo Pixel Art
 - [x] Style guide committed: `STYLE_GUIDE.md`
 - [x] Tasting images feature merged (PR #8, #10)
+- [x] WhatsApp bot working with Vercel AI SDK
+- [x] Cyberpunk Terminal design direction chosen
+- [ ] Fix tool schemas (inputSchema + stopWhen — agents in progress)
+- [ ] Admin privileges
+- [ ] Multi-message agent flow
 - [ ] Phone linking
+- [ ] Sake research & auto-fill
 - [ ] Rank awareness tools
 - [ ] Post-tasting summaries
 - [ ] Profile setup flow
 - [ ] AI profile pic generation
+- [ ] AI sake bottle art
+- [ ] Tasting image transforms via agent
