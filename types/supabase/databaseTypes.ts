@@ -246,6 +246,51 @@ export type Database = {
         }
         Relationships: []
       }
+      tasting_images: {
+        Row: {
+          id: string
+          tasting_id: string
+          original_image_url: string | null
+          generated_image_url: string | null
+          image_type: string
+          prompt_used: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          tasting_id: string
+          original_image_url?: string | null
+          generated_image_url?: string | null
+          image_type: string
+          prompt_used?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          tasting_id?: string
+          original_image_url?: string | null
+          generated_image_url?: string | null
+          image_type?: string
+          prompt_used?: string | null
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasting_images_tasting_id_fkey"
+            columns: ["tasting_id"]
+            isOneToOne: false
+            referencedRelation: "tastings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasting_images_tasting_id_fkey"
+            columns: ["tasting_id"]
+            isOneToOne: false
+            referencedRelation: "sake_rankings"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
     }
     Views: {
       sake_rankings: {
