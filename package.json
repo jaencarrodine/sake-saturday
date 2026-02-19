@@ -10,11 +10,12 @@
     "gen-supabase": "supabase gen types typescript --project-id tvypdpvnpuugxknqdbyb > types/supabase/databaseTypes.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.77.0",
+    "@ai-sdk/anthropic": "^3.0.45",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.89.0",
     "@tanstack/react-query": "^5.90.15",
     "@tanstack/react-query-devtools": "^5.91.2",
+    "ai": "^6.0.91",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.562.0",
@@ -30,6 +31,7 @@
     "supabase": "2.67.1",
     "tailwind-merge": "^3.4.0",
     "twilio": "^5.12.2",
+    "zod": "^4.3.6",
     "zustand": "^5.0.9"
   },
   "devDependencies": {

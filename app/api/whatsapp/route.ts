@@ -3,6 +3,8 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { processMessage } from '@/lib/ai/chat';
 import twilio from 'twilio';
 
+export const maxDuration = 30;
+
 const validateEnvVars = () => {
 	const requiredVars = {
 		ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
