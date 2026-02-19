@@ -228,6 +228,24 @@ export type Database = {
         }
         Relationships: []
       }
+      conversation_state: {
+        Row: {
+          phone_number: string
+          context: Json
+          updated_at: string
+        }
+        Insert: {
+          phone_number: string
+          context?: Json
+          updated_at?: string
+        }
+        Update: {
+          phone_number?: string
+          context?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       sake_rankings: {
