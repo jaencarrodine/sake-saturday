@@ -46,6 +46,18 @@ export default async function SakePage({ params }: Props) {
     .eq("sake_id", id)
     .order("created_at", { ascending: false });
 
+  // Fetch AI-generated bottle art from any tasting of this sake
+  const tastingIds = tastings?.map((t: any) => t.id) || [];
+  const { data: bottleArt } = await supabase
+    .from("tasting_images")
+    .select("*")
+    .in("tasting_id", tastingIds)
+    .eq("image_type", "bottle_art")
+    .limit(1)
+    .maybeSingle();
+  
+  const aiBottleArtUrl = bottleArt?.generated_image_url;
+
   // Calculate average score
   const allScores = tastings?.flatMap((t: any) => t.tasting_scores.map((s: any) => s.score)) || [];
   const avgScore = allScores.length > 0 
@@ -57,7 +69,7 @@ export default async function SakePage({ params }: Props) {
       <div className="max-w-4xl mx-auto">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
           {/* Image Section */}
-          <div className="md:col-span-1">
+          <div className="md:col-span-1 space-y-4">
             {sakeRow.front_image_url ? (
               <div className="relative w-full aspect-[3/4] bg-muted rounded-lg overflow-hidden">
                 <Image
@@ -70,6 +82,18 @@ export default async function SakePage({ params }: Props) {
             ) : (
               <div className="w-full aspect-[3/4] bg-muted rounded-lg flex items-center justify-center">
                 <span className="text-6xl">🍶</span>
+              </div>
+            )}
+            
+            {aiBottleArtUrl && (
+              <div className="relative w-full aspect-[3/4] bg-muted rounded-lg overflow-hidden border-2 border-primary">
+                <Badge className="absolute top-2 left-2 z-10">✨ Ukiyo-e Art</Badge>
+                <Image
+                  src={aiBottleArtUrl}
+                  alt={`${sakeRow.name} - AI Generated Art`}
+                  fill
+                  className="object-cover"
+                />
               </div>
             )}
           </div>
