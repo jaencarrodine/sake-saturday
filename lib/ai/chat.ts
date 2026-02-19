@@ -184,7 +184,7 @@ export const processMessage = async (
 			model: anthropic(CLAUDE_MODEL),
 			system: systemPrompt,
 			messages,
-			// tools: sakeTools, // TODO: fix tool schema compatibility with Zod 3.25 + AI SDK
+			tools: sakeTools,
 			stopWhen: stepCountIs(5),
 		});
 

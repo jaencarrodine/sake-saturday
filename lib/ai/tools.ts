@@ -1,17 +1,14 @@
-// @ts-nocheck
-import { tool } from 'ai';
 import { z } from 'zod';
 import { createServiceClient } from '@/lib/supabase/server';
 import type { Database } from '@/types/supabase/databaseTypes';
 
 type Taster = Database['public']['Tables']['tasters']['Row'];
 
-export const sakeTools: any = {
-	// @ts-ignore
-	identify_sake: tool({
+export const sakeTools = {
+	identify_sake: {
 		description:
 			'Search for an existing sake in the database or create a new one. Use this when the user sends a photo or description of a sake bottle.',
-		parameters: z.object({
+		inputSchema: z.object({
 			name: z.string().describe('Name of the sake (required)'),
 			prefecture: z.string().optional().describe('Prefecture/region where the sake is from'),
 			grade: z.string().optional().describe('Sake grade (e.g., Daiginjo, Ginjo, Junmai, Honjozo)'),
@@ -22,7 +19,17 @@ export const sakeTools: any = {
 			smv: z.number().optional().describe('Sake Meter Value (sweetness/dryness)'),
 			bottling_company: z.string().optional().describe('Brewery/bottling company name'),
 		}),
-		execute: async (params) => {
+		execute: async (params: {
+			name: string;
+			prefecture?: string;
+			grade?: string;
+			type?: string;
+			rice?: string;
+			polishing_ratio?: number;
+			alc_percentage?: number;
+			smv?: number;
+			bottling_company?: string;
+		}) => {
 			const { name, prefecture, grade, type, rice, polishing_ratio, alc_percentage, smv, bottling_company } = params;
 			const supabase = createServiceClient();
 
@@ -68,19 +75,23 @@ export const sakeTools: any = {
 				message: 'Created new sake in database',
 			};
 		},
-	}),
+	},
 
-	// @ts-ignore
-	create_tasting: tool({
+	create_tasting: {
 		description:
 			'Create a new tasting session for a sake. Use this after identifying a sake and when the user is ready to start tasting.',
-		parameters: z.object({
+		inputSchema: z.object({
 			sake_id: z.string().describe('ID of the sake being tasted (from identify_sake result)'),
 			date: z.string().optional().describe('Date of tasting in YYYY-MM-DD format (defaults to today)'),
 			location_name: z.string().optional().describe('Name of the location where tasting is happening'),
 			created_by_phone: z.string().optional().describe('Phone number of the person creating the tasting'),
 		}),
-		execute: async (params) => {
+		execute: async (params: {
+			sake_id: string;
+			date?: string;
+			location_name?: string;
+			created_by_phone?: string;
+		}) => {
 			const { sake_id, date, location_name, created_by_phone } = params;
 			const supabase = createServiceClient();
 			const tastingDate = date || new Date().toISOString().split('T')[0];
@@ -116,13 +127,12 @@ export const sakeTools: any = {
 				message: 'Created new tasting session',
 			};
 		},
-	}),
+	},
 
-	// @ts-ignore
-	record_scores: tool({
+	record_scores: {
 		description:
 			'Record scores from tasters for a specific tasting. Scores are on a 0-10 scale. Can record multiple tasters at once.',
-		parameters: z.object({
+		inputSchema: z.object({
 			tasting_id: z.string().describe('ID of the tasting session'),
 			scores: z.array(
 				z.object({
@@ -133,7 +143,15 @@ export const sakeTools: any = {
 				})
 			).describe('Array of scores from different tasters'),
 		}),
-		execute: async (params) => {
+		execute: async (params: {
+			tasting_id: string;
+			scores: Array<{
+				taster_name: string;
+				taster_phone?: string;
+				score: number;
+				notes?: string;
+			}>;
+		}) => {
 			const { tasting_id, scores } = params;
 			const supabase = createServiceClient();
 			const processedScores = [];
@@ -177,33 +195,38 @@ export const sakeTools: any = {
 				message: `Recorded ${processedScores.length} score(s)`,
 			};
 		},
-	}),
+	},
 
-	// @ts-ignore
-	lookup_taster: tool({
+	lookup_taster: {
 		description:
 			'Find an existing taster by name or phone number, or create a new one.',
-		parameters: z.object({
+		inputSchema: z.object({
 			name: z.string().describe('Name of the taster'),
 			phone_number: z.string().optional().describe('Phone number of the taster'),
 		}),
-		execute: async (params) => {
+		execute: async (params: {
+			name: string;
+			phone_number?: string;
+		}) => {
 			const { name, phone_number } = params;
 			const supabase = createServiceClient();
 			return lookupTasterHelper(supabase, { name, phone_number });
 		},
-	}),
+	},
 
-	// @ts-ignore
-	get_tasting_history: tool({
+	get_tasting_history: {
 		description:
 			'Get past tasting sessions, optionally filtered by sake, taster, or date range.',
-		parameters: z.object({
+		inputSchema: z.object({
 			sake_id: z.string().optional().describe('Filter by specific sake ID'),
 			taster_id: z.string().optional().describe('Filter by specific taster ID'),
 			limit: z.number().optional().describe('Maximum number of tastings to return (default 10)'),
 		}),
-		execute: async (params) => {
+		execute: async (params: {
+			sake_id?: string;
+			taster_id?: string;
+			limit?: number;
+		}) => {
 			const { sake_id, taster_id, limit } = params;
 			const supabase = createServiceClient();
 			const queryLimit = limit || 10;
@@ -244,17 +267,19 @@ export const sakeTools: any = {
 				count: data?.length || 0,
 			};
 		},
-	}),
+	},
 
-	// @ts-ignore
-	get_sake_rankings: tool({
+	get_sake_rankings: {
 		description:
 			'Get the current sake leaderboard with average scores and number of tastings.',
-		parameters: z.object({
+		inputSchema: z.object({
 			limit: z.number().optional().describe('Maximum number of sakes to return (default 10)'),
 			min_tastings: z.number().optional().describe('Minimum number of tastings required to be included (default 1)'),
 		}),
-		execute: async (params) => {
+		execute: async (params: {
+			limit?: number;
+			min_tastings?: number;
+		}) => {
 			const { limit, min_tastings } = params;
 			const supabase = createServiceClient();
 			const queryLimit = limit || 10;
@@ -277,7 +302,7 @@ export const sakeTools: any = {
 				count: data?.length || 0,
 			};
 		},
-	}),
+	},
 };
 
 const lookupTasterHelper = async (
