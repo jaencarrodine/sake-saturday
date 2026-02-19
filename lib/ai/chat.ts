@@ -31,9 +31,13 @@ export const processMessage = async (
 	mediaUrls: string[] | null
 ): Promise<string> => {
 	try {
+		console.log('[processMessage] Starting for:', { phoneNumber, hasBody: !!messageBody, mediaUrls: mediaUrls?.length || 0 });
+		
 		const supabase = createServiceClient();
 
 		const conversationHistory = await getConversationHistory(supabase, phoneNumber);
+		console.log('[processMessage] Loaded conversation history:', conversationHistory.length, 'messages');
+		
 		const context = await getConversationContext(supabase, phoneNumber);
 
 		const messages = await buildClaudeMessages(
@@ -41,10 +45,25 @@ export const processMessage = async (
 			messageBody,
 			mediaUrls
 		);
+		
+		console.log('[processMessage] Built Claude messages:', messages.length, 'messages');
+		console.log('[processMessage] Message roles:', messages.map(m => m.role).join(', '));
+
+		if (messages.length === 0) {
+			console.warn('[processMessage] No messages to send to Claude');
+			return "The sake speaks through silence... but perhaps you could speak louder?";
+		}
 
 		let response = await callClaude(messages, context);
+		console.log('[processMessage] Initial Claude response, stop_reason:', response.stop_reason);
 
-		while (response.stop_reason === 'tool_use') {
+		let toolUseIterations = 0;
+		const maxToolUseIterations = 10;
+
+		while (response.stop_reason === 'tool_use' && toolUseIterations < maxToolUseIterations) {
+			toolUseIterations++;
+			console.log('[processMessage] Tool use iteration:', toolUseIterations);
+			
 			const toolResults = await executeToolCalls(response);
 			
 			messages.push({
@@ -58,16 +77,27 @@ export const processMessage = async (
 			});
 
 			response = await callClaude(messages, context);
+			console.log('[processMessage] Claude response after tool use, stop_reason:', response.stop_reason);
+		}
+
+		if (toolUseIterations >= maxToolUseIterations) {
+			console.warn('[processMessage] Max tool use iterations reached');
 		}
 
 		const textResponse = extractTextResponse(response);
+		console.log('[processMessage] Extracted text response, length:', textResponse.length);
 
 		await updateConversationContext(supabase, phoneNumber, response);
 
 		return textResponse;
 	} catch (error) {
-		console.error('Error processing message:', error);
-		return "Ahh, the sake gods cloud my vision. A technical disturbance in the flow. Try again, perhaps?";
+		console.error('[processMessage] Error:', {
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+			phoneNumber,
+			messageBody,
+		});
+		throw error;
 	}
 };
 
@@ -159,7 +189,46 @@ const buildClaudeMessages = async (
 		});
 	}
 
-	return messages;
+	return mergeConsecutiveMessages(messages);
+};
+
+const mergeConsecutiveMessages = (
+	messages: Anthropic.MessageParam[]
+): Anthropic.MessageParam[] => {
+	if (messages.length === 0) return messages;
+
+	const merged: Anthropic.MessageParam[] = [];
+	let currentMessage = messages[0];
+
+	for (let i = 1; i < messages.length; i++) {
+		const nextMessage = messages[i];
+
+		if (currentMessage.role === nextMessage.role) {
+			const currentContent = Array.isArray(currentMessage.content)
+				? currentMessage.content
+				: [{ type: 'text' as const, text: currentMessage.content }];
+			const nextContent = Array.isArray(nextMessage.content)
+				? nextMessage.content
+				: [{ type: 'text' as const, text: nextMessage.content }];
+
+			currentMessage = {
+				role: currentMessage.role,
+				content: [...currentContent, ...nextContent],
+			};
+		} else {
+			merged.push(currentMessage);
+			currentMessage = nextMessage;
+		}
+	}
+
+	merged.push(currentMessage);
+
+	if (merged.length > 0 && merged[0].role === 'assistant') {
+		console.warn('[buildClaudeMessages] First message is assistant role, removing it');
+		merged.shift();
+	}
+
+	return merged;
 };
 
 const callClaude = async (
@@ -172,13 +241,23 @@ const callClaude = async (
 			: ''
 	);
 
-	return await anthropic.messages.create({
-		model: CLAUDE_MODEL,
-		max_tokens: 1024,
-		system: systemPrompt,
-		messages,
-		tools: TOOL_DEFINITIONS as Anthropic.Tool[],
-	});
+	try {
+		return await anthropic.messages.create({
+			model: CLAUDE_MODEL,
+			max_tokens: 1024,
+			system: systemPrompt,
+			messages,
+			tools: TOOL_DEFINITIONS as Anthropic.Tool[],
+		});
+	} catch (error) {
+		console.error('[callClaude] Claude API error:', {
+			error: error instanceof Error ? error.message : String(error),
+			model: CLAUDE_MODEL,
+			messageCount: messages.length,
+			messageRoles: messages.map(m => m.role).join(', '),
+		});
+		throw error;
+	}
 };
 
 const executeToolCalls = async (
