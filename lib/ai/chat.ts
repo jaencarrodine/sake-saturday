@@ -220,17 +220,19 @@ const getConversationHistory = async (
 	supabase: ReturnType<typeof createServiceClient>,
 	phoneNumber: string
 ): Promise<WhatsAppMessage[]> => {
+	console.log(JSON.stringify({ level: 'debug', message: 'Fetching conversation history', phoneNumber }));
 	const { data, error } = await supabase
 		.from('whatsapp_messages')
 		.select('*')
-		.or(`from_number.eq.${phoneNumber},to_number.eq.${phoneNumber}`)
+		.or(`from_number.eq."${phoneNumber}",to_number.eq."${phoneNumber}"`)
 		.order('created_at', { ascending: false })
 		.limit(MAX_MESSAGE_HISTORY);
 
 	if (error) {
-		console.error('Error fetching conversation history:', error);
+		console.error(JSON.stringify({ level: 'error', message: 'Error fetching conversation history', error }));
 		return [];
 	}
+	console.log(JSON.stringify({ level: 'debug', message: 'Conversation history fetched', count: data?.length || 0 }));
 
 	return (data || []).reverse();
 };
