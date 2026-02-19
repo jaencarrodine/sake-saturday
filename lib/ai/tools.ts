@@ -1,11 +1,12 @@
 import { z } from 'zod';
+import { tool } from 'ai';
 import { createServiceClient } from '@/lib/supabase/server';
 import type { Database } from '@/types/supabase/databaseTypes';
 
 type Taster = Database['public']['Tables']['tasters']['Row'];
 
 export const sakeTools = {
-	identify_sake: {
+	identify_sake: tool({
 		description:
 			'Search for an existing sake in the database or create a new one. Use this when the user sends a photo or description of a sake bottle.',
 		inputSchema: z.object({
@@ -30,6 +31,13 @@ export const sakeTools = {
 			smv?: number;
 			bottling_company?: string;
 		}) => {
+			console.log(JSON.stringify({
+				level: 'info',
+				message: 'Tool: identify_sake called',
+				params,
+				timestamp: new Date().toISOString(),
+			}));
+
 			const { name, prefecture, grade, type, rice, polishing_ratio, alc_percentage, smv, bottling_company } = params;
 			const supabase = createServiceClient();
 
@@ -40,12 +48,19 @@ export const sakeTools = {
 				.single();
 
 			if (!findError && existingSake) {
-				return {
+				const result = {
 					success: true,
 					sake: existingSake,
 					created: false,
 					message: 'Found existing sake in database',
 				};
+				console.log(JSON.stringify({
+					level: 'info',
+					message: 'Tool: identify_sake result',
+					result,
+					timestamp: new Date().toISOString(),
+				}));
+				return result;
 			}
 
 			const { data: newSake, error: createError } = await supabase
@@ -68,16 +83,23 @@ export const sakeTools = {
 				throw new Error(`Failed to create sake: ${createError.message}`);
 			}
 
-			return {
+			const result = {
 				success: true,
 				sake: newSake,
 				created: true,
 				message: 'Created new sake in database',
 			};
+			console.log(JSON.stringify({
+				level: 'info',
+				message: 'Tool: identify_sake result',
+				result,
+				timestamp: new Date().toISOString(),
+			}));
+			return result;
 		},
-	},
+	}),
 
-	create_tasting: {
+	create_tasting: tool({
 		description:
 			'Create a new tasting session for a sake. Use this after identifying a sake and when the user is ready to start tasting.',
 		inputSchema: z.object({
@@ -92,6 +114,13 @@ export const sakeTools = {
 			location_name?: string;
 			created_by_phone?: string;
 		}) => {
+			console.log(JSON.stringify({
+				level: 'info',
+				message: 'Tool: create_tasting called',
+				params,
+				timestamp: new Date().toISOString(),
+			}));
+
 			const { sake_id, date, location_name, created_by_phone } = params;
 			const supabase = createServiceClient();
 			const tastingDate = date || new Date().toISOString().split('T')[0];
@@ -121,15 +150,23 @@ export const sakeTools = {
 				throw new Error(`Failed to create tasting: ${createError.message}`);
 			}
 
-			return {
+			const result = {
 				success: true,
 				tasting: newTasting,
+				tasting_url: `https://sake-saturday.vercel.app/tasting/${newTasting.id}`,
 				message: 'Created new tasting session',
 			};
+			console.log(JSON.stringify({
+				level: 'info',
+				message: 'Tool: create_tasting result',
+				result,
+				timestamp: new Date().toISOString(),
+			}));
+			return result;
 		},
-	},
+	}),
 
-	record_scores: {
+	record_scores: tool({
 		description:
 			'Record scores from tasters for a specific tasting. Scores are on a 0-10 scale. Can record multiple tasters at once.',
 		inputSchema: z.object({
@@ -152,6 +189,13 @@ export const sakeTools = {
 				notes?: string;
 			}>;
 		}) => {
+			console.log(JSON.stringify({
+				level: 'info',
+				message: 'Tool: record_scores called',
+				params,
+				timestamp: new Date().toISOString(),
+			}));
+
 			const { tasting_id, scores } = params;
 			const supabase = createServiceClient();
 			const processedScores = [];
@@ -188,16 +232,23 @@ export const sakeTools = {
 				processedScores.push(score);
 			}
 
-			return {
+			const result = {
 				success: true,
 				scores: processedScores,
 				count: processedScores.length,
 				message: `Recorded ${processedScores.length} score(s)`,
 			};
+			console.log(JSON.stringify({
+				level: 'info',
+				message: 'Tool: record_scores result',
+				result,
+				timestamp: new Date().toISOString(),
+			}));
+			return result;
 		},
-	},
+	}),
 
-	lookup_taster: {
+	lookup_taster: tool({
 		description:
 			'Find an existing taster by name or phone number, or create a new one.',
 		inputSchema: z.object({
@@ -208,13 +259,27 @@ export const sakeTools = {
 			name: string;
 			phone_number?: string;
 		}) => {
+			console.log(JSON.stringify({
+				level: 'info',
+				message: 'Tool: lookup_taster called',
+				params,
+				timestamp: new Date().toISOString(),
+			}));
+
 			const { name, phone_number } = params;
 			const supabase = createServiceClient();
-			return lookupTasterHelper(supabase, { name, phone_number });
+			const result = await lookupTasterHelper(supabase, { name, phone_number });
+			console.log(JSON.stringify({
+				level: 'info',
+				message: 'Tool: lookup_taster result',
+				result,
+				timestamp: new Date().toISOString(),
+			}));
+			return result;
 		},
-	},
+	}),
 
-	get_tasting_history: {
+	get_tasting_history: tool({
 		description:
 			'Get past tasting sessions, optionally filtered by sake, taster, or date range.',
 		inputSchema: z.object({
@@ -227,6 +292,13 @@ export const sakeTools = {
 			taster_id?: string;
 			limit?: number;
 		}) => {
+			console.log(JSON.stringify({
+				level: 'info',
+				message: 'Tool: get_tasting_history called',
+				params,
+				timestamp: new Date().toISOString(),
+			}));
+
 			const { sake_id, taster_id, limit } = params;
 			const supabase = createServiceClient();
 			const queryLimit = limit || 10;
@@ -261,15 +333,22 @@ export const sakeTools = {
 				throw new Error(`Failed to fetch tasting history: ${error.message}`);
 			}
 
-			return {
+			const result = {
 				success: true,
 				tastings: data,
 				count: data?.length || 0,
 			};
+			console.log(JSON.stringify({
+				level: 'info',
+				message: 'Tool: get_tasting_history result',
+				result,
+				timestamp: new Date().toISOString(),
+			}));
+			return result;
 		},
-	},
+	}),
 
-	get_sake_rankings: {
+	get_sake_rankings: tool({
 		description:
 			'Get the current sake leaderboard with average scores and number of tastings.',
 		inputSchema: z.object({
@@ -280,6 +359,13 @@ export const sakeTools = {
 			limit?: number;
 			min_tastings?: number;
 		}) => {
+			console.log(JSON.stringify({
+				level: 'info',
+				message: 'Tool: get_sake_rankings called',
+				params,
+				timestamp: new Date().toISOString(),
+			}));
+
 			const { limit, min_tastings } = params;
 			const supabase = createServiceClient();
 			const queryLimit = limit || 10;
@@ -296,13 +382,20 @@ export const sakeTools = {
 				throw new Error(`Failed to fetch sake rankings: ${error.message}`);
 			}
 
-			return {
+			const result = {
 				success: true,
 				rankings: data,
 				count: data?.length || 0,
 			};
+			console.log(JSON.stringify({
+				level: 'info',
+				message: 'Tool: get_sake_rankings result',
+				result,
+				timestamp: new Date().toISOString(),
+			}));
+			return result;
 		},
-	},
+	}),
 };
 
 const lookupTasterHelper = async (
