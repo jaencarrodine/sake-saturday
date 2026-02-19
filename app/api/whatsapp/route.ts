@@ -120,7 +120,12 @@ export const POST = async (req: NextRequest) => {
 			}));
 		}
 		
-		processAndReply(from, to, body, mediaUrls, requestId).catch(err => {
+		// IMPORTANT: Must await processing before returning response.
+		// On Vercel serverless, the function is killed once the response is sent.
+		// Fire-and-forget does NOT work on serverless.
+		try {
+			await processAndReply(from, to, body, mediaUrls, requestId);
+		} catch (err) {
 			console.error(JSON.stringify({
 				level: 'error',
 				requestId,
@@ -131,7 +136,7 @@ export const POST = async (req: NextRequest) => {
 				},
 				timestamp: new Date().toISOString(),
 			}));
-		});
+		}
 		
 		return new Response('<Response></Response>', {
 			headers: { 'Content-Type': 'text/xml' },
