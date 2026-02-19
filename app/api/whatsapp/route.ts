@@ -5,6 +5,8 @@ import twilio from 'twilio';
 
 export const maxDuration = 30;
 
+const ADMIN_NUMBERS = ["whatsapp:+14439941537"];
+
 const validateEnvVars = () => {
 	const requiredVars = {
 		ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
@@ -124,7 +126,8 @@ export const POST = async (req: NextRequest) => {
 		// On Vercel serverless, the function is killed once the response is sent.
 		// Fire-and-forget does NOT work on serverless.
 		try {
-			await processAndReply(from, to, body, mediaUrls, requestId);
+			const isAdmin = ADMIN_NUMBERS.includes(from);
+			await processAndReply(from, to, body, mediaUrls, requestId, isAdmin);
 		} catch (err) {
 			console.error(JSON.stringify({
 				level: 'error',
@@ -163,7 +166,8 @@ const processAndReply = async (
 	to: string,
 	body: string | null,
 	mediaUrls: string[],
-	requestId: string
+	requestId: string,
+	isAdmin: boolean = false
 ) => {
 	const processStart = Date.now();
 	let aiResponse: string | null = null;
@@ -185,7 +189,7 @@ const processAndReply = async (
 		}));
 		
 		const aiStart = Date.now();
-		aiResponse = await processMessage(from, body, mediaUrls.length > 0 ? mediaUrls : null, requestId);
+		aiResponse = await processMessage(from, to, body, mediaUrls.length > 0 ? mediaUrls : null, requestId, isAdmin, twilioClient);
 		
 		console.log(JSON.stringify({
 			level: 'info',

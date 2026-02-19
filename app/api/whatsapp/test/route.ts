@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processMessage } from '@/lib/ai/chat';
 import { createServiceClient } from '@/lib/supabase/server';
+import twilio from 'twilio';
 
 const checkEnvVars = () => {
 	const vars = {
@@ -121,11 +122,22 @@ export const POST = async (req: NextRequest) => {
 		}
 
 		const processStart = Date.now();
+		
+		const twilioClient = twilio(
+			process.env.TWILIO_ACCOUNT_SID,
+			process.env.TWILIO_AUTH_TOKEN
+		);
+		
+		const testToNumber = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+1234567890';
+		
 		const aiResponse = await processMessage(
-			testPhone, 
+			testPhone,
+			testToNumber,
 			message, 
 			mediaUrls || null, 
-			requestId
+			requestId,
+			false,
+			twilioClient
 		);
 		const processDuration = Date.now() - processStart;
 

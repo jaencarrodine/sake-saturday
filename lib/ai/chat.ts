@@ -1,9 +1,10 @@
 import { generateText, UserContent, AssistantContent, stepCountIs } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
-import { SAKE_SENSEI_SYSTEM_PROMPT, MAX_MESSAGE_HISTORY, CLAUDE_MODEL } from './personality';
-import { sakeTools } from './tools';
+import { SAKE_SENSEI_SYSTEM_PROMPT, ADMIN_PROMPT_ADDENDUM, MAX_MESSAGE_HISTORY, CLAUDE_MODEL } from './personality';
+import { createTools, createAdminTools } from './tools';
 import { processMediaUrls } from './vision';
 import { createServiceClient } from '@/lib/supabase/server';
+import type { Twilio } from 'twilio';
 
 type Message = 
 	| { role: 'user'; content: UserContent }
@@ -28,9 +29,12 @@ type ConversationContext = {
 
 export const processMessage = async (
 	phoneNumber: string,
+	toNumber: string,
 	messageBody: string | null,
 	mediaUrls: string[] | null,
-	requestId?: string
+	requestId?: string,
+	isAdmin: boolean = false,
+	twilioClient?: Twilio
 ): Promise<string> => {
 	const logId = requestId || `proc_${Date.now()}`;
 	const processStart = Date.now();
@@ -161,11 +165,24 @@ export const processMessage = async (
 			return "The sake speaks through silence... but perhaps you could speak louder?";
 		}
 
-		const systemPrompt = SAKE_SENSEI_SYSTEM_PROMPT + (
+		let systemPrompt = SAKE_SENSEI_SYSTEM_PROMPT + (
 			context && Object.keys(context).length > 0
 				? `\n\nCurrent conversation context: ${JSON.stringify(context, null, 2)}`
 				: ''
 		);
+		
+		if (isAdmin) {
+			systemPrompt += ADMIN_PROMPT_ADDENDUM;
+		}
+
+		const toolContext = {
+			twilioClient: twilioClient!,
+			fromNumber: toNumber,
+			toNumber: phoneNumber,
+		};
+		
+		const regularTools = createTools(toolContext);
+		const allTools = isAdmin ? { ...regularTools, ...createAdminTools() } : regularTools;
 
 		console.log(JSON.stringify({
 			level: 'info',
@@ -174,7 +191,8 @@ export const processMessage = async (
 			data: {
 				messageCount: messages.length,
 				model: CLAUDE_MODEL,
-				toolCount: Object.keys(sakeTools).length,
+				toolCount: Object.keys(allTools).length,
+				isAdmin,
 			},
 			timestamp: new Date().toISOString(),
 		}));
@@ -184,7 +202,7 @@ export const processMessage = async (
 		model: anthropic(CLAUDE_MODEL),
 		system: systemPrompt,
 		messages,
-		tools: sakeTools,
+		tools: allTools,
 		stopWhen: stepCountIs(5),
 	});
 
