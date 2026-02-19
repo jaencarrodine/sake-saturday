@@ -11,8 +11,6 @@ export default function BlockGauge({
   value, 
   blockLength = 10,
   startColor = "#FF0080",
-  midColor = "#FF0080",
-  endColor = "#FF0080",
   className = ""
 }: BlockGaugeProps) {
   const normalizedValue = Math.max(0, Math.min(1, value));
