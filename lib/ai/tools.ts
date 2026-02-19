@@ -127,7 +127,7 @@ export const sakeTools = {
 			throw new Error(`Failed to create tasting: ${createError.message}`);
 		}
 
-		const tastingUrl = `https://sake-saturday.vercel.app/tasting/${newTasting.id}`;
+		const tastingUrl = `https://sakesatur.day/tasting/${newTasting.id}`;
 		console.log('[Tool: create_tasting] Created new tasting:', newTasting.id, 'URL:', tastingUrl);
 
 		return {
