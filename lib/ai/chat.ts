@@ -116,18 +116,18 @@ const buildClaudeMessages = async (
 
 	for (const msg of history) {
 		const role = msg.direction === 'inbound' ? 'user' : 'assistant';
-		const content: Anthropic.ContentBlock[] = [];
+		const content: Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> = [];
 
 		if (msg.body) {
 			content.push({
 				type: 'text',
 				text: msg.body,
-			});
+			} as Anthropic.TextBlockParam);
 		}
 
 		if (msg.media_urls && msg.media_urls.length > 0 && role === 'user') {
 			const mediaContents = await processMediaUrls(msg.media_urls);
-			content.push(...mediaContents);
+			content.push(...(mediaContents as Anthropic.ImageBlockParam[]));
 		}
 
 		if (content.length > 0) {
@@ -138,18 +138,18 @@ const buildClaudeMessages = async (
 		}
 	}
 
-	const currentContent: Anthropic.ContentBlock[] = [];
+	const currentContent: Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> = [];
 
 	if (currentBody) {
 		currentContent.push({
 			type: 'text',
 			text: currentBody,
-		});
+		} as Anthropic.TextBlockParam);
 	}
 
 	if (currentMediaUrls && currentMediaUrls.length > 0) {
 		const mediaContents = await processMediaUrls(currentMediaUrls);
-		currentContent.push(...mediaContents);
+		currentContent.push(...(mediaContents as Anthropic.ImageBlockParam[]));
 	}
 
 	if (currentContent.length > 0) {

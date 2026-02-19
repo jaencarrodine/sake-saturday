@@ -1,15 +1,8 @@
-type MediaContent = {
-	type: 'image';
-	source: {
-		type: 'base64';
-		media_type: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
-		data: string;
-	};
-};
+import type Anthropic from '@anthropic-ai/sdk';
 
 export const downloadTwilioMedia = async (
 	mediaUrl: string
-): Promise<MediaContent | null> => {
+): Promise<Anthropic.ImageBlockParam | null> => {
 	try {
 		const accountSid = process.env.TWILIO_ACCOUNT_SID;
 		const authToken = process.env.TWILIO_AUTH_TOKEN;
@@ -69,7 +62,7 @@ const getMediaType = (
 
 export const processMediaUrls = async (
 	mediaUrls: string[] | null
-): Promise<MediaContent[]> => {
+): Promise<Anthropic.ImageBlockParam[]> => {
 	if (!mediaUrls || mediaUrls.length === 0) {
 		return [];
 	}
@@ -78,5 +71,5 @@ export const processMediaUrls = async (
 		mediaUrls.map(url => downloadTwilioMedia(url))
 	);
 
-	return mediaContents.filter((content): content is MediaContent => content !== null);
+	return mediaContents.filter((content): content is Anthropic.ImageBlockParam => content !== null);
 };

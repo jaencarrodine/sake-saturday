@@ -1,10 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/server';
 import type { Database } from '@/types/supabase/databaseTypes';
 
-type Sake = Database['public']['Tables']['sakes']['Row'];
-type Tasting = Database['public']['Tables']['tastings']['Row'];
 type Taster = Database['public']['Tables']['tasters']['Row'];
-type Score = Database['public']['Tables']['scores']['Row'];
 
 export const TOOL_DEFINITIONS = [
 	{
