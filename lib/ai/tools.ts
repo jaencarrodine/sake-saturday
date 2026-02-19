@@ -184,25 +184,76 @@ export const TOOL_DEFINITIONS = [
 
 export const executeTool = async (
 	toolName: string,
-	toolInput: Record<string, unknown>
+	toolInput: Record<string, unknown>,
+	requestId?: string
 ): Promise<unknown> => {
 	const supabase = createServiceClient();
+	const logId = requestId || `tool_${Date.now()}`;
 
-	switch (toolName) {
-		case 'identify_sake':
-			return await identifySake(supabase, toolInput);
-		case 'create_tasting':
-			return await createTasting(supabase, toolInput);
-		case 'record_scores':
-			return await recordScores(supabase, toolInput);
-		case 'lookup_taster':
-			return await lookupTaster(supabase, toolInput);
-		case 'get_tasting_history':
-			return await getTastingHistory(supabase, toolInput);
-		case 'get_sake_rankings':
-			return await getSakeRankings(supabase, toolInput);
-		default:
-			throw new Error(`Unknown tool: ${toolName}`);
+	console.log(JSON.stringify({
+		level: 'info',
+		requestId: logId,
+		message: 'Tool execution started',
+		data: {
+			toolName,
+			input: toolInput,
+		},
+		timestamp: new Date().toISOString(),
+	}));
+
+	try {
+		let result;
+		switch (toolName) {
+			case 'identify_sake':
+				result = await identifySake(supabase, toolInput);
+				break;
+			case 'create_tasting':
+				result = await createTasting(supabase, toolInput);
+				break;
+			case 'record_scores':
+				result = await recordScores(supabase, toolInput);
+				break;
+			case 'lookup_taster':
+				result = await lookupTaster(supabase, toolInput);
+				break;
+			case 'get_tasting_history':
+				result = await getTastingHistory(supabase, toolInput);
+				break;
+			case 'get_sake_rankings':
+				result = await getSakeRankings(supabase, toolInput);
+				break;
+			default:
+				throw new Error(`Unknown tool: ${toolName}`);
+		}
+		
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId: logId,
+			message: 'Tool execution completed',
+			data: {
+				toolName,
+				success: true,
+			},
+			timestamp: new Date().toISOString(),
+		}));
+		
+		return result;
+	} catch (error) {
+		console.error(JSON.stringify({
+			level: 'error',
+			requestId: logId,
+			message: 'Tool execution error',
+			error: {
+				message: error instanceof Error ? error.message : String(error),
+				stack: error instanceof Error ? error.stack : undefined,
+			},
+			data: {
+				toolName,
+				input: toolInput,
+			},
+			timestamp: new Date().toISOString(),
+		}));
+		throw error;
 	}
 };
 

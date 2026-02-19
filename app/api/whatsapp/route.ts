@@ -30,7 +30,16 @@ const twilioClient = twilio(
 );
 
 export const POST = async (req: NextRequest) => {
+	const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+	
 	try {
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId,
+			message: 'WhatsApp webhook received',
+			timestamp: new Date().toISOString(),
+		}));
+		
 		validateEnvVars();
 		
 		const formData = await req.formData();
@@ -49,8 +58,28 @@ export const POST = async (req: NextRequest) => {
 			}
 		}
 		
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId,
+			message: 'Webhook payload parsed',
+			data: {
+				from,
+				to,
+				messageSid,
+				bodyPreview: body?.substring(0, 100),
+				mediaCount: mediaUrls.length,
+			},
+			timestamp: new Date().toISOString(),
+		}));
+		
 		if (!from || !to || !messageSid) {
-			console.error('Missing required fields:', { from, to, messageSid });
+			console.error(JSON.stringify({
+				level: 'error',
+				requestId,
+				message: 'Missing required fields',
+				data: { from, to, messageSid },
+				timestamp: new Date().toISOString(),
+			}));
 			return new Response('<Response></Response>', {
 				headers: { 'Content-Type': 'text/xml' },
 				status: 400,
@@ -69,39 +98,56 @@ export const POST = async (req: NextRequest) => {
 		});
 		
 		if (error) {
-			console.error('Error inserting message:', error);
+			console.error(JSON.stringify({
+				level: 'error',
+				requestId,
+				message: 'Failed to insert message to database',
+				error: {
+					message: error.message,
+					code: error.code,
+					details: error.details,
+				},
+				timestamp: new Date().toISOString(),
+			}));
+		} else {
+			console.log(JSON.stringify({
+				level: 'info',
+				requestId,
+				message: 'Message saved to database',
+				timestamp: new Date().toISOString(),
+			}));
 		}
 		
-		processAndReply(from, to, body, mediaUrls).catch(err => {
-			console.error('Error in async processing:', err);
+		processAndReply(from, to, body, mediaUrls, requestId).catch(err => {
+			console.error(JSON.stringify({
+				level: 'error',
+				requestId,
+				message: 'Unhandled error in async processing',
+				error: {
+					message: err instanceof Error ? err.message : String(err),
+					stack: err instanceof Error ? err.stack : undefined,
+				},
+				timestamp: new Date().toISOString(),
+			}));
 		});
 		
 		return new Response('<Response></Response>', {
 			headers: { 'Content-Type': 'text/xml' },
 		});
 	} catch (error) {
-		console.error('Error in POST /api/whatsapp:', error);
+		console.error(JSON.stringify({
+			level: 'error',
+			requestId,
+			message: 'Critical error in webhook handler',
+			error: {
+				message: error instanceof Error ? error.message : String(error),
+				stack: error instanceof Error ? error.stack : undefined,
+			},
+			timestamp: new Date().toISOString(),
+		}));
 		return new Response('<Response></Response>', {
 			headers: { 'Content-Type': 'text/xml' },
 		});
-	}
-};
-
-const sendTypingIndicator = async (from: string, to: string): Promise<void> => {
-	try {
-		const twilioFrom = process.env.TWILIO_WHATSAPP_NUMBER || to;
-		const formattedFrom = twilioFrom.startsWith('whatsapp:') ? twilioFrom : `whatsapp:${twilioFrom}`;
-		const formattedTo = from.startsWith('whatsapp:') ? from : `whatsapp:${from}`;
-		
-		await twilioClient.messages.create({
-			from: formattedFrom,
-			to: formattedTo,
-			body: '...',
-		});
-		
-		console.log('[sendTypingIndicator] Typing indicator sent');
-	} catch (error) {
-		console.warn('[sendTypingIndicator] Failed to send typing indicator (non-critical):', error instanceof Error ? error.message : String(error));
 	}
 };
 
@@ -109,25 +155,53 @@ const processAndReply = async (
 	from: string,
 	to: string,
 	body: string | null,
-	mediaUrls: string[]
+	mediaUrls: string[],
+	requestId: string
 ) => {
 	let aiResponse: string;
 	
 	try {
-		console.log('[processAndReply] Starting processing for:', { from, hasBody: !!body, mediaCount: mediaUrls.length });
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId,
+			message: 'Starting AI processing',
+			data: {
+				from,
+				hasBody: !!body,
+				bodyPreview: body?.substring(0, 100),
+				mediaCount: mediaUrls.length,
+			},
+			timestamp: new Date().toISOString(),
+		}));
 		
-		await sendTypingIndicator(from, to);
+		aiResponse = await processMessage(from, body, mediaUrls.length > 0 ? mediaUrls : null, requestId);
 		
-		aiResponse = await processMessage(from, body, mediaUrls.length > 0 ? mediaUrls : null);
-		
-		console.log('[processAndReply] AI response generated, length:', aiResponse.length);
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId,
+			message: 'AI response generated',
+			data: {
+				responseLength: aiResponse.length,
+				responsePreview: aiResponse.substring(0, 150),
+			},
+			timestamp: new Date().toISOString(),
+		}));
 	} catch (error) {
-		console.error('[processAndReply] Error in AI processing:', {
-			error: error instanceof Error ? error.message : String(error),
-			stack: error instanceof Error ? error.stack : undefined,
-			from,
-			body,
-		});
+		console.error(JSON.stringify({
+			level: 'error',
+			requestId,
+			message: 'AI processing failed',
+			error: {
+				message: error instanceof Error ? error.message : String(error),
+				stack: error instanceof Error ? error.stack : undefined,
+				name: error instanceof Error ? error.name : 'Unknown',
+			},
+			data: {
+				from,
+				bodyPreview: body?.substring(0, 100),
+			},
+			timestamp: new Date().toISOString(),
+		}));
 		
 		aiResponse = "Ahh, the sake gods cloud my vision. A technical disturbance in the flow. Try again, perhaps?";
 	}
@@ -136,13 +210,28 @@ const processAndReply = async (
 		const twilioFrom = process.env.TWILIO_WHATSAPP_NUMBER || to;
 		
 		if (!twilioFrom.startsWith('whatsapp:')) {
-			console.warn('[processAndReply] TWILIO_WHATSAPP_NUMBER missing whatsapp: prefix, adding it');
+			console.log(JSON.stringify({
+				level: 'warn',
+				requestId,
+				message: 'TWILIO_WHATSAPP_NUMBER missing whatsapp: prefix, adding it',
+				timestamp: new Date().toISOString(),
+			}));
 		}
 		
 		const formattedFrom = twilioFrom.startsWith('whatsapp:') ? twilioFrom : `whatsapp:${twilioFrom}`;
 		const formattedTo = from.startsWith('whatsapp:') ? from : `whatsapp:${from}`;
 		
-		console.log('[processAndReply] Sending Twilio message:', { from: formattedFrom, to: formattedTo });
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId,
+			message: 'Sending Twilio message',
+			data: {
+				from: formattedFrom,
+				to: formattedTo,
+				bodyPreview: aiResponse.substring(0, 100),
+			},
+			timestamp: new Date().toISOString(),
+		}));
 		
 		const message = await twilioClient.messages.create({
 			from: formattedFrom,
@@ -150,10 +239,19 @@ const processAndReply = async (
 			body: aiResponse,
 		});
 		
-		console.log('[processAndReply] Message sent successfully:', message.sid);
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId,
+			message: 'Twilio message sent successfully',
+			data: {
+				messageSid: message.sid,
+				status: message.status,
+			},
+			timestamp: new Date().toISOString(),
+		}));
 		
 		const supabase = createServiceClient();
-		await supabase.from('whatsapp_messages').insert({
+		const { error: insertError } = await supabase.from('whatsapp_messages').insert({
 			direction: 'outbound',
 			from_number: formattedFrom,
 			to_number: formattedTo,
@@ -163,20 +261,83 @@ const processAndReply = async (
 			processed: true,
 		});
 		
-		await supabase
+		if (insertError) {
+			console.error(JSON.stringify({
+				level: 'error',
+				requestId,
+				message: 'Failed to save outbound message to database',
+				error: {
+					message: insertError.message,
+					code: insertError.code,
+				},
+				timestamp: new Date().toISOString(),
+			}));
+		}
+		
+		const { error: updateError } = await supabase
 			.from('whatsapp_messages')
 			.update({ processed: true, processed_at: new Date().toISOString() })
 			.eq('from_number', from)
 			.eq('processed', false);
 		
-		console.log('[processAndReply] Database updated successfully');
+		if (updateError) {
+			console.error(JSON.stringify({
+				level: 'error',
+				requestId,
+				message: 'Failed to update inbound message status',
+				error: {
+					message: updateError.message,
+					code: updateError.code,
+				},
+				timestamp: new Date().toISOString(),
+			}));
+		} else {
+			console.log(JSON.stringify({
+				level: 'info',
+				requestId,
+				message: 'Database updated successfully',
+				timestamp: new Date().toISOString(),
+			}));
+		}
 	} catch (error) {
-		console.error('[processAndReply] Error sending reply:', {
-			error: error instanceof Error ? error.message : String(error),
-			stack: error instanceof Error ? error.stack : undefined,
-			from,
-			to,
-			aiResponse: aiResponse?.substring(0, 100),
-		});
+		console.error(JSON.stringify({
+			level: 'error',
+			requestId,
+			message: 'Failed to send reply via Twilio',
+			error: {
+				message: error instanceof Error ? error.message : String(error),
+				stack: error instanceof Error ? error.stack : undefined,
+				name: error instanceof Error ? error.name : 'Unknown',
+			},
+			data: {
+				from,
+				to,
+				aiResponsePreview: aiResponse?.substring(0, 100),
+			},
+			timestamp: new Date().toISOString(),
+		}));
+		
+		// Attempt to send error message to user
+		try {
+			const twilioFrom = process.env.TWILIO_WHATSAPP_NUMBER || to;
+			const formattedFrom = twilioFrom.startsWith('whatsapp:') ? twilioFrom : `whatsapp:${twilioFrom}`;
+			const formattedTo = from.startsWith('whatsapp:') ? from : `whatsapp:${from}`;
+			
+			await twilioClient.messages.create({
+				from: formattedFrom,
+				to: formattedTo,
+				body: "Gomen! The sake delivery has been delayed. Technical issues. Please try again in a moment.",
+			});
+		} catch (fallbackError) {
+			console.error(JSON.stringify({
+				level: 'error',
+				requestId,
+				message: 'Failed to send fallback error message',
+				error: {
+					message: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+				},
+				timestamp: new Date().toISOString(),
+			}));
+		}
 	}
 };
