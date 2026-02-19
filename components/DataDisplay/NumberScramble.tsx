@@ -60,7 +60,7 @@ export default function NumberScramble({
   }, [value, isLoading, decimals, isScrambling]);
   
   return (
-    <span className={`tabular-nums ${className}`}>
+    <span className={`tabular-nums neon-cyan ${className}`}>
       {displayValue.toFixed(decimals)}
     </span>
   );

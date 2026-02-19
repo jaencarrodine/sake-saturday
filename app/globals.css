@@ -7,30 +7,59 @@
   /* Fonts */
   --font-vt323: var(--font-vt323);
   --font-noto: var(--font-noto-sans-jp);
+  --font-press-start: var(--font-press-start-2p);
   
-  /* Colors */
-  --color-background: #000000;
+  /* Cyberpunk Colors */
+  --color-background: #0a0812;
   --color-foreground: #ffffff;
-  --color-primary: #5C588D;
-  --color-primary-highlight: #9694FF;
+  --color-primary: #00ffcc;
+  --color-primary-highlight: #00ffcc;
   --color-sake-gold: #C4A35A;
   --color-neon-pink: #FF0080;
+  --color-neon-cyan: #00ffcc;
   --color-green: #79C39A;
   --color-red: #E84545;
   --color-inactive: #2A2A2A;
-  --color-divider: #303030;
+  --color-divider: #1a1a3e;
+  --color-panel-bg: rgba(10, 8, 18, 0.9);
+  --color-muted: #666666;
 }
 
 :root {
-  --muted: rgba(255, 255, 255, 0.8);
+  --muted: #666666;
 }
 
 @layer base {
   * {
-    @apply border-primary;
+    @apply border-divider;
   }
+  
   body {
-    @apply bg-black text-white;
+    @apply bg-background text-white relative;
+  }
+  
+  /* CRT Scanlines overlay */
+  body::before {
+    content: "";
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 9999;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.15),
+      rgba(0, 0, 0, 0.15) 1px,
+      transparent 1px,
+      transparent 2px
+    );
+  }
+  
+  /* Press Start 2P font for headers */
+  .font-pixel {
+    font-family: var(--font-press-start-2p);
   }
   
   /* Japanese font for Japanese characters */
@@ -40,12 +69,73 @@
   
   /* Muted text color */
   .text-muted {
-    color: rgba(255, 255, 255, 0.8);
+    color: var(--color-muted);
   }
   
   /* Dotted separator for terminal rows */
   .text-dots {
     color: var(--color-divider);
     letter-spacing: -0.1em;
+  }
+  
+  /* Panel styles */
+  .panel {
+    background: var(--color-panel-bg);
+    border: 1px solid var(--color-divider);
+    position: relative;
+  }
+  
+  .panel::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--color-neon-cyan), transparent);
+  }
+  
+  /* Panel title styles */
+  .panel-title {
+    font-family: var(--font-press-start-2p);
+    font-size: 0.7rem;
+    letter-spacing: 2px;
+    color: var(--color-neon-cyan);
+    text-transform: uppercase;
+  }
+  
+  /* Neon glow effects */
+  .neon-cyan {
+    color: var(--color-neon-cyan);
+    text-shadow: 0 0 5px var(--color-neon-cyan),
+                 0 0 10px var(--color-neon-cyan),
+                 0 0 20px var(--color-neon-cyan);
+  }
+  
+  .neon-pink {
+    color: var(--color-neon-pink);
+    text-shadow: 0 0 5px var(--color-neon-pink),
+                 0 0 10px var(--color-neon-pink),
+                 0 0 20px var(--color-neon-pink);
+  }
+  
+  /* Pixel bar for gauges */
+  .pixel-bar {
+    display: flex;
+    flex-direction: row;
+    gap: 2px;
+  }
+  
+  .pixel-bar-block {
+    width: 8px;
+    height: 16px;
+    background: var(--color-neon-pink);
+  }
+  
+  /* Taster row with dot leaders */
+  .taster-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
   }
 }
