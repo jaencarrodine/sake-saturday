@@ -28,17 +28,48 @@ const anthropic = new Anthropic({
 export const processMessage = async (
 	phoneNumber: string,
 	messageBody: string | null,
-	mediaUrls: string[] | null
+	mediaUrls: string[] | null,
+	requestId?: string
 ): Promise<string> => {
+	const logId = requestId || `proc_${Date.now()}`;
+	
 	try {
-		console.log('[processMessage] Starting for:', { phoneNumber, hasBody: !!messageBody, mediaUrls: mediaUrls?.length || 0 });
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId: logId,
+			message: 'processMessage started',
+			data: {
+				phoneNumber,
+				hasBody: !!messageBody,
+				mediaCount: mediaUrls?.length || 0,
+			},
+			timestamp: new Date().toISOString(),
+		}));
 		
 		const supabase = createServiceClient();
 
 		const conversationHistory = await getConversationHistory(supabase, phoneNumber);
-		console.log('[processMessage] Loaded conversation history:', conversationHistory.length, 'messages');
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId: logId,
+			message: 'Loaded conversation history',
+			data: {
+				historyCount: conversationHistory.length,
+			},
+			timestamp: new Date().toISOString(),
+		}));
 		
 		const context = await getConversationContext(supabase, phoneNumber);
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId: logId,
+			message: 'Loaded conversation context',
+			data: {
+				hasContext: Object.keys(context).length > 0,
+				contextKeys: Object.keys(context),
+			},
+			timestamp: new Date().toISOString(),
+		}));
 
 		const messages = await buildClaudeMessages(
 			conversationHistory,
@@ -46,25 +77,74 @@ export const processMessage = async (
 			mediaUrls
 		);
 		
-		console.log('[processMessage] Built Claude messages:', messages.length, 'messages');
-		console.log('[processMessage] Message roles:', messages.map(m => m.role).join(', '));
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId: logId,
+			message: 'Built Claude messages',
+			data: {
+				messageCount: messages.length,
+				roles: messages.map(m => m.role),
+				hasMedia: messages.some(m => 
+					Array.isArray(m.content) && 
+					m.content.some(c => c.type === 'image')
+				),
+			},
+			timestamp: new Date().toISOString(),
+		}));
 
 		if (messages.length === 0) {
-			console.warn('[processMessage] No messages to send to Claude');
+			console.log(JSON.stringify({
+				level: 'warn',
+				requestId: logId,
+				message: 'No messages to send to Claude',
+				timestamp: new Date().toISOString(),
+			}));
 			return "The sake speaks through silence... but perhaps you could speak louder?";
 		}
 
-		let response = await callClaude(messages, context);
-		console.log('[processMessage] Initial Claude response, stop_reason:', response.stop_reason);
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId: logId,
+			message: 'Calling Claude API',
+			data: {
+				messageCount: messages.length,
+				model: CLAUDE_MODEL,
+			},
+			timestamp: new Date().toISOString(),
+		}));
+
+		let response = await callClaude(messages, context, logId);
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId: logId,
+			message: 'Initial Claude response received',
+			data: {
+				stopReason: response.stop_reason,
+				contentBlocks: response.content.length,
+				contentTypes: response.content.map(c => c.type),
+			},
+			timestamp: new Date().toISOString(),
+		}));
 
 		let toolUseIterations = 0;
 		const maxToolUseIterations = 10;
 
 		while (response.stop_reason === 'tool_use' && toolUseIterations < maxToolUseIterations) {
 			toolUseIterations++;
-			console.log('[processMessage] Tool use iteration:', toolUseIterations);
+			console.log(JSON.stringify({
+				level: 'info',
+				requestId: logId,
+				message: 'Tool use iteration',
+				data: {
+					iteration: toolUseIterations,
+					toolsUsed: response.content
+						.filter(c => c.type === 'tool_use')
+						.map(c => c.type === 'tool_use' ? c.name : null),
+				},
+				timestamp: new Date().toISOString(),
+			}));
 			
-			const toolResults = await executeToolCalls(response);
+			const toolResults = await executeToolCalls(response, logId);
 			
 			messages.push({
 				role: 'assistant',
@@ -76,27 +156,62 @@ export const processMessage = async (
 				content: toolResults,
 			});
 
-			response = await callClaude(messages, context);
-			console.log('[processMessage] Claude response after tool use, stop_reason:', response.stop_reason);
+			response = await callClaude(messages, context, logId);
+			console.log(JSON.stringify({
+				level: 'info',
+				requestId: logId,
+				message: 'Claude response after tool use',
+				data: {
+					stopReason: response.stop_reason,
+					iteration: toolUseIterations,
+				},
+				timestamp: new Date().toISOString(),
+			}));
 		}
 
 		if (toolUseIterations >= maxToolUseIterations) {
-			console.warn('[processMessage] Max tool use iterations reached');
+			console.log(JSON.stringify({
+				level: 'warn',
+				requestId: logId,
+				message: 'Max tool use iterations reached',
+				data: {
+					maxIterations: maxToolUseIterations,
+				},
+				timestamp: new Date().toISOString(),
+			}));
 		}
 
 		const textResponse = extractTextResponse(response);
-		console.log('[processMessage] Extracted text response, length:', textResponse.length);
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId: logId,
+			message: 'Extracted text response',
+			data: {
+				length: textResponse.length,
+				preview: textResponse.substring(0, 150),
+			},
+			timestamp: new Date().toISOString(),
+		}));
 
 		await updateConversationContext(supabase, phoneNumber, response);
 
 		return textResponse;
 	} catch (error) {
-		console.error('[processMessage] Error:', {
-			error: error instanceof Error ? error.message : String(error),
-			stack: error instanceof Error ? error.stack : undefined,
-			phoneNumber,
-			messageBody,
-		});
+		console.error(JSON.stringify({
+			level: 'error',
+			requestId: logId,
+			message: 'processMessage failed',
+			error: {
+				message: error instanceof Error ? error.message : String(error),
+				stack: error instanceof Error ? error.stack : undefined,
+				name: error instanceof Error ? error.name : 'Unknown',
+			},
+			data: {
+				phoneNumber,
+				messageBodyPreview: messageBody?.substring(0, 100),
+			},
+			timestamp: new Date().toISOString(),
+		}));
 		throw error;
 	}
 };
@@ -233,7 +348,8 @@ const mergeConsecutiveMessages = (
 
 const callClaude = async (
 	messages: Anthropic.MessageParam[],
-	context: ConversationContext
+	context: ConversationContext,
+	requestId: string
 ): Promise<Anthropic.Message> => {
 	const systemPrompt = SAKE_SENSEI_SYSTEM_PROMPT + (
 		context && Object.keys(context).length > 0
@@ -242,40 +358,104 @@ const callClaude = async (
 	);
 
 	try {
-		return await anthropic.messages.create({
+		const response = await anthropic.messages.create({
 			model: CLAUDE_MODEL,
 			max_tokens: 1024,
 			system: systemPrompt,
 			messages,
 			tools: TOOL_DEFINITIONS as Anthropic.Tool[],
 		});
+		
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId,
+			message: 'Claude API call successful',
+			data: {
+				model: CLAUDE_MODEL,
+				stopReason: response.stop_reason,
+				usage: response.usage,
+			},
+			timestamp: new Date().toISOString(),
+		}));
+		
+		return response;
 	} catch (error) {
-		console.error('[callClaude] Claude API error:', {
-			error: error instanceof Error ? error.message : String(error),
-			model: CLAUDE_MODEL,
-			messageCount: messages.length,
-			messageRoles: messages.map(m => m.role).join(', '),
-		});
+		console.error(JSON.stringify({
+			level: 'error',
+			requestId,
+			message: 'Claude API call failed',
+			error: {
+				message: error instanceof Error ? error.message : String(error),
+				stack: error instanceof Error ? error.stack : undefined,
+				name: error instanceof Error ? error.name : 'Unknown',
+			},
+			data: {
+				model: CLAUDE_MODEL,
+				messageCount: messages.length,
+				messageRoles: messages.map(m => m.role),
+			},
+			timestamp: new Date().toISOString(),
+		}));
 		throw error;
 	}
 };
 
 const executeToolCalls = async (
-	response: Anthropic.Message
+	response: Anthropic.Message,
+	requestId: string
 ): Promise<Anthropic.ToolResultBlockParam[]> => {
 	const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
 	for (const block of response.content) {
 		if (block.type === 'tool_use') {
 			try {
-				const result = await executeTool(block.name, block.input as Record<string, unknown>);
+				console.log(JSON.stringify({
+					level: 'info',
+					requestId,
+					message: 'Executing tool',
+					data: {
+						toolName: block.name,
+						toolId: block.id,
+						input: block.input,
+					},
+					timestamp: new Date().toISOString(),
+				}));
+				
+				const result = await executeTool(block.name, block.input as Record<string, unknown>, requestId);
+				
+				console.log(JSON.stringify({
+					level: 'info',
+					requestId,
+					message: 'Tool executed successfully',
+					data: {
+						toolName: block.name,
+						toolId: block.id,
+						resultPreview: JSON.stringify(result).substring(0, 200),
+					},
+					timestamp: new Date().toISOString(),
+				}));
+				
 				toolResults.push({
 					type: 'tool_result',
 					tool_use_id: block.id,
 					content: JSON.stringify(result),
 				});
 			} catch (error) {
-				console.error(`Error executing tool ${block.name}:`, error);
+				console.error(JSON.stringify({
+					level: 'error',
+					requestId,
+					message: 'Tool execution failed',
+					error: {
+						message: error instanceof Error ? error.message : String(error),
+						stack: error instanceof Error ? error.stack : undefined,
+					},
+					data: {
+						toolName: block.name,
+						toolId: block.id,
+					},
+					timestamp: new Date().toISOString(),
+				}));
+				
 				toolResults.push({
 					type: 'tool_result',
 					tool_use_id: block.id,
