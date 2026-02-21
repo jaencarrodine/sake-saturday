@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { tool } from 'ai';
 import { createServiceClient } from '@/lib/supabase/server';
+import { ensurePhoneLinkForTaster, hashPhoneNumber, resolveTasterByPhone } from '@/lib/phoneHash';
 import type { Database } from '@/types/supabase/databaseTypes';
 import type { Twilio } from 'twilio';
 
@@ -143,12 +144,12 @@ export const createTools = (context: ToolContext) => {
 
 		let createdById: string | undefined;
 		if (created_by_phone) {
-			const { data: taster } = await supabase
-				.from('tasters')
-				.select('id')
-				.eq('phone_number', created_by_phone)
-				.single();
-			createdById = taster?.id;
+			try {
+				const creatorResolution = await resolveTasterByPhone(supabase, created_by_phone);
+				createdById = creatorResolution.tasterId ?? undefined;
+			} catch (error) {
+				console.warn('[Tool: create_tasting] Unable to resolve created_by_phone hash:', error);
+			}
 		}
 
 		const { data: newTasting, error: createError } = await supabase
@@ -210,7 +211,7 @@ export const createTools = (context: ToolContext) => {
 		for (const scoreInput of scores) {
 			const tasterResult = await lookupTasterHelper(supabase, {
 				name: scoreInput.taster_name,
-				phone_number: scoreInput.taster_phone,
+				phone: scoreInput.taster_phone,
 			});
 
 			const taster = tasterResult.taster;
@@ -254,16 +255,19 @@ export const createTools = (context: ToolContext) => {
 			'Find an existing taster by name or phone number, or create a new one.',
 		inputSchema: z.object({
 			name: z.string().describe('Name of the taster'),
-			phone_number: z.string().optional().describe('Phone number of the taster'),
+			phone: z.string().optional().describe('Phone number of the taster'),
+			phone_number: z.string().optional().describe('Deprecated alias for phone number'),
 		}),
 	execute: async (params: {
 		name: string;
+		phone?: string;
 		phone_number?: string;
 	}) => {
 		console.log('[Tool: lookup_taster] Executing with params:', JSON.stringify(params));
-		const { name, phone_number } = params;
+		const { name, phone, phone_number } = params;
+		const resolvedPhone = phone || phone_number;
 		const supabase = createServiceClient();
-		const result = await lookupTasterHelper(supabase, { name, phone_number });
+		const result = await lookupTasterHelper(supabase, { name, phone: resolvedPhone });
 		console.log('[Tool: lookup_taster] Result:', result.created ? 'Created new taster' : 'Found existing taster', result.taster.id);
 		return result;
 	},
@@ -416,7 +420,9 @@ export const createAdminTools = () => {
 				taster_id: z.string().describe('ID of the taster to update'),
 				updates: z.object({
 					name: z.string().optional(),
+					phone: z.string().optional(),
 					phone_number: z.string().optional(),
+					phone_hash: z.string().optional(),
 					profile_pic: z.string().optional(),
 					rank_override: z.string().optional(),
 				}).describe('Fields to update'),
@@ -424,23 +430,67 @@ export const createAdminTools = () => {
 			execute: async ({ taster_id, updates }) => {
 				console.log('[Tool: admin_edit_taster] Updating taster:', taster_id, updates);
 				const supabase = createServiceClient();
-				
-				const { data, error } = await supabase
-					.from('tasters')
-					.update(updates)
-					.eq('id', taster_id)
-					.select()
-					.single();
-				
-				if (error) {
-					console.error('[Tool: admin_edit_taster] Error:', error.message);
-					throw new Error(`Failed to update taster: ${error.message}`);
+
+				const { phone, phone_number, phone_hash, ...directUpdates } = updates;
+				const phoneInput = phone || phone_number;
+				const tasterUpdates = phone_hash
+					? { ...directUpdates, phone_hash }
+					: directUpdates;
+				const hasDirectUpdates = Object.keys(tasterUpdates).length > 0;
+
+				const { data: updatedOrExistingTaster, error: tasterUpdateError } = hasDirectUpdates
+					? await supabase
+						.from('tasters')
+						.update(tasterUpdates)
+						.eq('id', taster_id)
+						.select()
+						.single()
+					: await supabase
+						.from('tasters')
+						.select('*')
+						.eq('id', taster_id)
+						.single();
+
+				if (tasterUpdateError) {
+					console.error('[Tool: admin_edit_taster] Error:', tasterUpdateError.message);
+					throw new Error(`Failed to update taster: ${tasterUpdateError.message}`);
 				}
-				
+
+				if (phoneInput) {
+					await ensurePhoneLinkForTaster(supabase, taster_id, phoneInput);
+				} else if (phone_hash) {
+					const { error: phoneLinkError } = await supabase
+						.from('taster_phone_links')
+						.upsert(
+							{
+								taster_id,
+								phone_hash,
+								linked_at: new Date().toISOString(),
+							},
+							{
+								onConflict: 'phone_hash',
+							}
+						);
+
+					if (phoneLinkError) {
+						throw new Error(`Failed to update taster phone link: ${phoneLinkError.message}`);
+					}
+				}
+
+				const { data: refreshedTaster, error: refreshError } = await supabase
+					.from('tasters')
+					.select('*')
+					.eq('id', taster_id)
+					.single();
+
+				if (refreshError) {
+					throw new Error(`Failed to refresh updated taster: ${refreshError.message}`);
+				}
+
 				console.log('[Tool: admin_edit_taster] Updated successfully');
 				return {
 					success: true,
-					taster: data,
+					taster: refreshedTaster || updatedOrExistingTaster,
 					message: 'Taster updated successfully',
 				};
 			},
@@ -552,51 +602,78 @@ export const createAdminTools = () => {
 
 const lookupTasterHelper = async (
 	supabase: ReturnType<typeof createServiceClient>,
-	input: { name: string; phone_number?: string }
+	input: { name: string; phone?: string }
 ): Promise<{ success: boolean; taster: Taster; created: boolean }> => {
-	const { name, phone_number } = input;
+	const { name, phone } = input;
 
-	if (phone_number) {
-		const { data, error } = await supabase
-			.from('tasters')
-			.select('*')
-			.eq('phone_number', phone_number)
-			.single();
+	if (phone) {
+		try {
+			const resolution = await resolveTasterByPhone(supabase, phone);
 
-		if (!error && data) {
-			return {
-				success: true,
-				taster: data,
-				created: false,
-			};
+			if (resolution.tasterId) {
+				const { data: linkedTaster, error: linkedTasterError } = await supabase
+					.from('tasters')
+					.select('*')
+					.eq('id', resolution.tasterId)
+					.maybeSingle();
+
+				if (linkedTasterError) {
+					throw new Error(`Failed to load linked taster: ${linkedTasterError.message}`);
+				}
+
+				if (linkedTaster) {
+					await ensurePhoneLinkForTaster(supabase, linkedTaster.id, phone);
+					return {
+						success: true,
+						taster: linkedTaster,
+						created: false,
+					};
+				}
+			}
+		} catch (error) {
+			console.warn('[lookupTasterHelper] Failed resolving taster by phone hash:', error);
 		}
 	}
 
-	const { data, error } = await supabase
+	const { data: tasterByName, error: tasterByNameError } = await supabase
 		.from('tasters')
 		.select('*')
 		.ilike('name', name)
-		.single();
+		.maybeSingle();
 
-	if (!error && data) {
+	if (tasterByNameError) {
+		throw new Error(`Failed to find taster by name: ${tasterByNameError.message}`);
+	}
+
+	if (tasterByName) {
+		if (phone) {
+			await ensurePhoneLinkForTaster(supabase, tasterByName.id, phone);
+		}
+
 		return {
 			success: true,
-			taster: data,
+			taster: tasterByName,
 			created: false,
 		};
 	}
+
+	const phoneHash = phone ? hashPhoneNumber(phone) : null;
 
 	const { data: newTaster, error: createError } = await supabase
 		.from('tasters')
 		.insert({
 			name,
-			phone_number,
+			phone_hash: phoneHash,
 		})
 		.select()
 		.single();
 
 	if (createError) {
 		throw new Error(`Failed to create taster: ${createError.message}`);
+	}
+
+	if (phone) {
+		await ensurePhoneLinkForTaster(supabase, newTaster.id, phone);
 	}
 
 	return {

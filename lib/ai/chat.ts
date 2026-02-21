@@ -3,7 +3,9 @@ import { anthropic } from '@ai-sdk/anthropic';
 import { SAKE_SENSEI_SYSTEM_PROMPT, ADMIN_PROMPT_ADDENDUM, MAX_MESSAGE_HISTORY, CLAUDE_MODEL } from './personality';
 import { createTools, createAdminTools } from './tools';
 import { processMediaUrls } from './vision';
+import { resolveTasterByPhone } from '@/lib/phoneHash';
 import { createServiceClient } from '@/lib/supabase/server';
+import type { Database } from '@/types/supabase/databaseTypes';
 import type { Twilio } from 'twilio';
 
 type Message = 
@@ -25,6 +27,23 @@ type ConversationContext = {
 	sake_id?: string;
 	pending_confirmations?: Record<string, unknown>;
 	[key: string]: unknown;
+};
+
+type LinkedTasterProfile = {
+	id: string;
+	name: string;
+	profile_pic: string | null;
+};
+
+type ToolCallStep = {
+	toolName: string;
+	args?: unknown;
+};
+
+type GenerateTextResult = {
+	steps?: Array<{
+		toolCalls?: ToolCallStep[];
+	}>;
 };
 
 export const processMessage = async (
@@ -115,6 +134,37 @@ export const processMessage = async (
 			context = {};
 		}
 
+		let linkedTaster: LinkedTasterProfile | null = null;
+		const linkedTasterStart = Date.now();
+		try {
+			linkedTaster = await resolveLinkedTasterProfile(supabase, phoneNumber);
+			console.log(JSON.stringify({
+				level: 'info',
+				requestId: logId,
+				message: linkedTaster
+					? 'Resolved linked taster from phone hash'
+					: 'No linked taster found for phone hash',
+				data: {
+					tasterId: linkedTaster?.id || null,
+					durationMs: Date.now() - linkedTasterStart,
+				},
+				timestamp: new Date().toISOString(),
+			}));
+		} catch (error) {
+			console.error(JSON.stringify({
+				level: 'error',
+				requestId: logId,
+				message: 'Failed to resolve linked taster profile (non-critical)',
+				error: {
+					message: error instanceof Error ? error.message : String(error),
+					stack: error instanceof Error ? error.stack : undefined,
+					name: error instanceof Error ? error.name : 'Unknown',
+				},
+				durationMs: Date.now() - linkedTasterStart,
+				timestamp: new Date().toISOString(),
+			}));
+		}
+
 		const buildStart = Date.now();
 		let messages: Message[];
 		try {
@@ -170,6 +220,10 @@ export const processMessage = async (
 				? `\n\nCurrent conversation context: ${JSON.stringify(context, null, 2)}`
 				: ''
 		);
+
+		if (linkedTaster) {
+			systemPrompt += `\n\nResolved taster profile from phone hash: ${JSON.stringify(linkedTaster, null, 2)}`;
+		}
 		
 		if (isAdmin) {
 			systemPrompt += ADMIN_PROMPT_ADDENDUM;
@@ -578,6 +632,33 @@ const buildMessages = async (
 	}
 };
 
+const resolveLinkedTasterProfile = async (
+	supabase: ReturnType<typeof createServiceClient>,
+	phoneNumber: string
+): Promise<LinkedTasterProfile | null> => {
+	const resolution = await resolveTasterByPhone(supabase, phoneNumber);
+
+	if (!resolution.tasterId) {
+		return null;
+	}
+
+	const { data: linkedTaster, error } = await supabase
+		.from('tasters')
+		.select('id, name, profile_pic')
+		.eq('id', resolution.tasterId)
+		.maybeSingle();
+
+	if (error) {
+		throw new Error(`Failed loading linked taster profile: ${error.message}`);
+	}
+
+	if (!linkedTaster) {
+		return null;
+	}
+
+	return linkedTaster;
+};
+
 const mergeConsecutiveMessages = (messages: Message[]): Message[] => {
 	if (messages.length === 0) return messages;
 
@@ -600,17 +681,17 @@ const mergeConsecutiveMessages = (messages: Message[]): Message[] => {
 					? nextMessage.content
 					: [{ type: 'text' as const, text: String(nextMessage.content) }];
 
-			const mergedContent: any = [...currentContent, ...nextContent];
+			const mergedContent = [...currentContent, ...nextContent];
 			
 			if (currentMessage.role === 'user') {
 				currentMessage = {
 					role: 'user' as const,
-					content: mergedContent,
+					content: mergedContent as UserContent,
 				};
 			} else {
 				currentMessage = {
 					role: 'assistant' as const,
-					content: mergedContent,
+					content: mergedContent as AssistantContent,
 				};
 			}
 		} else {
@@ -632,7 +713,7 @@ const mergeConsecutiveMessages = (messages: Message[]): Message[] => {
 const updateConversationContext = async (
 	supabase: ReturnType<typeof createServiceClient>,
 	phoneNumber: string,
-	result: any
+	result: GenerateTextResult
 ): Promise<void> => {
 	const start = Date.now();
 	try {
@@ -670,7 +751,7 @@ const updateConversationContext = async (
 			.from('conversation_state')
 			.upsert({
 				phone_number: phoneNumber,
-				context: updatedContext as any,
+				context: updatedContext as Database['public']['Tables']['conversation_state']['Insert']['context'],
 				updated_at: new Date().toISOString(),
 			});
 

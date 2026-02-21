@@ -70,6 +70,7 @@ export type Database = {
           id: string
           name: string
           phone_number: string | null
+          phone_hash: string | null
           profile_pic: string | null
           created_at: string
         }
@@ -77,6 +78,7 @@ export type Database = {
           id?: string
           name: string
           phone_number?: string | null
+          phone_hash?: string | null
           profile_pic?: string | null
           created_at?: string
         }
@@ -84,10 +86,43 @@ export type Database = {
           id?: string
           name?: string
           phone_number?: string | null
+          phone_hash?: string | null
           profile_pic?: string | null
           created_at?: string
         }
         Relationships: []
+      }
+      taster_phone_links: {
+        Row: {
+          id: string
+          taster_id: string
+          phone_hash: string
+          linked_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          taster_id: string
+          phone_hash: string
+          linked_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          taster_id?: string
+          phone_hash?: string
+          linked_at?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "taster_phone_links_taster_id_fkey"
+            columns: ["taster_id"]
+            isOneToOne: false
+            referencedRelation: "tasters"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       tastings: {
         Row: {

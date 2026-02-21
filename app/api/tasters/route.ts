@@ -1,12 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ensurePhoneLinkForTaster, hashPhoneNumber, resolveTasterByPhone } from '@/lib/phoneHash';
 import { createServiceClient } from '@/lib/supabase/server';
+import type { Database } from '@/types/supabase/databaseTypes';
 import { withApiAuth } from '@/lib/api/auth';
 
-// POST /api/tasters - Create or find taster by phone_number or name
+type Taster = Database['public']['Tables']['tasters']['Row'];
+
+const sanitizeTaster = (taster: Taster) => {
+	return {
+		id: taster.id,
+		name: taster.name,
+		profile_pic: taster.profile_pic,
+		created_at: taster.created_at,
+	};
+};
+
+// POST /api/tasters - Create or find taster by phone hash or name
 const postHandler = async (req: NextRequest) => {
 	try {
 		const body = await req.json();
-		const { name, phone_number, profile_pic } = body;
+		const { name, profile_pic } = body;
+		const phoneInput = body.phone || body.phone_number;
 
 		if (!name || typeof name !== 'string') {
 			return NextResponse.json(
@@ -17,39 +31,57 @@ const postHandler = async (req: NextRequest) => {
 
 		const supabase = createServiceClient();
 
-		// Try to find existing taster by phone_number or name
-		let existingTaster = null;
-		
-		// First try phone_number if provided
-		if (phone_number) {
-			const { data, error } = await supabase
-				.from('tasters')
-				.select('*')
-				.eq('phone_number', phone_number)
-				.single();
+		// Try to find an existing taster by privacy-safe phone hash first
+		if (phoneInput) {
+			const phoneResolution = await resolveTasterByPhone(supabase, phoneInput);
 
-			if (!error) {
-				existingTaster = data;
+			if (phoneResolution.tasterId) {
+				const { data: linkedTaster, error: linkedTasterError } = await supabase
+					.from('tasters')
+					.select('*')
+					.eq('id', phoneResolution.tasterId)
+					.maybeSingle();
+
+				if (linkedTasterError) {
+					console.error('Error finding taster by phone hash:', linkedTasterError);
+					return NextResponse.json(
+						{ error: 'Database error' },
+						{ status: 500 }
+					);
+				}
+
+				if (linkedTaster) {
+					await ensurePhoneLinkForTaster(supabase, linkedTaster.id, phoneInput);
+					return NextResponse.json({
+						taster: sanitizeTaster(linkedTaster),
+						created: false,
+					});
+				}
 			}
 		}
 
-		// If not found by phone, try by name (case-insensitive)
-		if (!existingTaster) {
-			const { data, error } = await supabase
-				.from('tasters')
-				.select('*')
-				.ilike('name', name)
-				.single();
+		// Otherwise try by name (case-insensitive)
+		const { data: tasterByName, error: tasterByNameError } = await supabase
+			.from('tasters')
+			.select('*')
+			.ilike('name', name)
+			.maybeSingle();
 
-			if (!error) {
-				existingTaster = data;
-			}
+		if (tasterByNameError) {
+			console.error('Error finding taster by name:', tasterByNameError);
+			return NextResponse.json(
+				{ error: 'Database error' },
+				{ status: 500 }
+			);
 		}
 
-		// If taster exists, return it
-		if (existingTaster) {
+		if (tasterByName) {
+			if (phoneInput) {
+				await ensurePhoneLinkForTaster(supabase, tasterByName.id, phoneInput);
+			}
+
 			return NextResponse.json({
-				taster: existingTaster,
+				taster: sanitizeTaster(tasterByName),
 				created: false,
 			});
 		}
@@ -59,8 +91,8 @@ const postHandler = async (req: NextRequest) => {
 			.from('tasters')
 			.insert({
 				name,
-				phone_number,
 				profile_pic,
+				phone_hash: phoneInput ? hashPhoneNumber(phoneInput) : null,
 			})
 			.select()
 			.single();
@@ -73,8 +105,12 @@ const postHandler = async (req: NextRequest) => {
 			);
 		}
 
+		if (phoneInput) {
+			await ensurePhoneLinkForTaster(supabase, newTaster.id, phoneInput);
+		}
+
 		return NextResponse.json({
-			taster: newTaster,
+			taster: sanitizeTaster(newTaster),
 			created: true,
 		}, { status: 201 });
 	} catch (error) {
