@@ -17,7 +17,9 @@ export function useTastingDetail(tastingId: string) {
             name,
             prefecture,
             type,
-            grade
+            grade,
+            image_url,
+            ai_bottle_image_url
           )
         `)
         .eq("id", tastingId)
@@ -34,7 +36,8 @@ export function useTastingDetail(tastingId: string) {
           tasters (
             id,
             name,
-            profile_pic
+            profile_pic,
+            ai_profile_image_url
           )
         `)
         .eq("tasting_id", tastingId)
