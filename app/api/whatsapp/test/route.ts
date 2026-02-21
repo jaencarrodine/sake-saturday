@@ -19,7 +19,7 @@ const checkEnvVars = () => {
 		vars,
 		allPresent: Object.values(vars).every(v => v),
 		missing: Object.entries(vars)
-			.filter(([_, present]) => !present)
+			.filter(entry => !entry[1])
 			.map(([key]) => key),
 	};
 };
