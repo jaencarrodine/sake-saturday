@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import Frame from '@/components/Frame';
 import GridArea from '@/components/GridArea';
@@ -29,12 +30,26 @@ export default function SakePage({ params }: RouteParams) {
 	const scores = data?.scores || [];
 	const images = data?.images || [];
 	
-	const galleryImages = images.map((img: any) => ({
-		id: img.id,
-		url: img.generated_image_url || img.original_image_url,
-		type: img.image_type,
-		isAiGenerated: !!img.generated_image_url,
-	}));
+	const galleryImages = images
+		.map((img: any) => {
+			const imageUrl = img.generated_image_url || img.original_image_url;
+			if (!imageUrl) return null;
+			return {
+				id: img.id,
+				url: imageUrl,
+				type: img.image_type,
+				isAiGenerated: !!img.generated_image_url,
+			};
+		})
+		.filter(Boolean) as Array<{ id: string; url: string; type: string; isAiGenerated: boolean }>;
+
+	const bottleImageUrl =
+		sake?.ai_bottle_image_url ||
+		sake?.image_url ||
+		galleryImages.find((image: any) =>
+			['bottle_art', 'bottle', 'bottle_image', 'bottle_photo', 'original', 'original_photo'].includes(image.type)
+		)?.url ||
+		null;
 
 	const allScores = scores.map((s: any) => s.score);
 	const averageScore = allScores.length > 0
@@ -83,21 +98,77 @@ export default function SakePage({ params }: RouteParams) {
 					<div className="lg:col-span-4 space-y-6">
 						<GridArea title="SAKE INFO" titleJa="酒情報">
 							<div className="space-y-4">
-								<div>
-									<div className="text-2xl text-sake-gold mb-2 font-noto">{sake.name}</div>
-									{averageScore !== null && (
-										<div className="space-y-2">
-											<div className="flex items-center justify-between">
-												<span className="text-muted text-sm uppercase">SCORE:</span>
-												<span className="neon-pink font-pixel text-2xl">{averageScore.toFixed(1)}</span>
+								<div className="panel overflow-hidden">
+									<div className="relative aspect-[3/4] bg-black">
+										{bottleImageUrl ? (
+											<Image
+												src={bottleImageUrl}
+												alt={sake.name}
+												fill
+												className="object-cover"
+												priority
+											/>
+										) : (
+											<div className="w-full h-full flex items-center justify-center bg-inactive text-white text-center px-6">
+												<div>
+													<div className="text-xs uppercase tracking-[0.25em] text-muted mb-2">No Bottle Image</div>
+													<div className="font-noto text-3xl text-sake-gold">{sake.name}</div>
+												</div>
 											</div>
-											<BlockGauge value={averageScore / 10} blockLength={15} />
-											<div className="text-right text-sm text-green uppercase tracking-wider">
-												{getScoreLabel(averageScore)}
+										)}
+
+										<div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-transparent" />
+
+										<div className="absolute inset-x-0 top-0 p-4">
+											<div className="inline-block rounded-sm border border-neon-cyan bg-black/60 px-2 py-1 text-[10px] uppercase tracking-[0.25em] text-neon-cyan">
+												BOTTLE CARD
 											</div>
 										</div>
-									)}
+
+										<div className="absolute inset-x-0 bottom-0 p-4">
+											<div className="text-2xl text-sake-gold font-noto leading-tight">{sake.name}</div>
+											<div className="mt-1 text-sm text-white">
+												{[sake.type, sake.grade].filter(Boolean).join(' • ') || 'SAKE PROFILE'}
+											</div>
+										</div>
+									</div>
 								</div>
+
+								<div className="grid grid-cols-2 gap-2">
+									<div className="border border-divider bg-black/30 px-3 py-2 text-center">
+										<div className="text-[10px] uppercase tracking-[0.2em] text-muted">Average</div>
+										<div className="font-pixel text-lg neon-pink">
+											{averageScore !== null ? averageScore.toFixed(1) : '--'}
+										</div>
+									</div>
+									<div className="border border-divider bg-black/30 px-3 py-2 text-center">
+										<div className="text-[10px] uppercase tracking-[0.2em] text-muted">Tastings</div>
+										<div className="font-pixel text-lg text-white">{tastings.length}</div>
+									</div>
+									<div className="border border-divider bg-black/30 px-3 py-2 text-center">
+										<div className="text-[10px] uppercase tracking-[0.2em] text-muted">Scores</div>
+										<div className="font-pixel text-lg text-sake-gold">{scores.length}</div>
+									</div>
+									<div className="border border-divider bg-black/30 px-3 py-2 text-center">
+										<div className="text-[10px] uppercase tracking-[0.2em] text-muted">Peak</div>
+										<div className="font-pixel text-lg text-green">
+											{highestScore !== null ? highestScore.toFixed(1) : '--'}
+										</div>
+									</div>
+								</div>
+
+								{averageScore !== null && (
+									<div className="space-y-2 border-t border-divider pt-4">
+										<div className="flex items-center justify-between">
+											<span className="text-muted text-sm uppercase">SCORE:</span>
+											<span className="neon-pink font-pixel text-2xl">{averageScore.toFixed(1)}</span>
+										</div>
+										<BlockGauge value={averageScore / 10} blockLength={15} />
+										<div className="text-right text-sm text-green uppercase tracking-wider">
+											{getScoreLabel(averageScore)}
+										</div>
+									</div>
+								)}
 
 								<div className="space-y-1 text-sm border-t border-divider pt-4">
 									{sake.bottling_company && (
@@ -216,29 +287,47 @@ export default function SakePage({ params }: RouteParams) {
 						<GridArea title="TASTER SCORES" titleJa="利酒師スコア">
 							<div className="space-y-2">
 								{scores.length > 0 ? (
-									scores.map((score: any) => (
-										<Link
-											key={score.id}
-											href={`/taster/${score.taster_id}`}
-											className="flex items-center justify-between py-2 border-b border-divider last:border-0 hover:bg-neon-cyan hover:bg-opacity-5 transition-colors px-2 -mx-2"
-										>
-											<div className="flex items-center gap-3">
-												<span className="text-neon-cyan">&gt;</span>
-												<span className="text-white">{score.tasters?.name}</span>
-											</div>
-											<div className="flex items-center gap-3">
-												<BlockGauge value={score.score / 10} blockLength={10} />
-												<span className={`font-pixel text-base w-12 text-right ${
-													score.score >= 8 ? 'text-green' :
-													score.score >= 7 ? 'text-sake-gold' :
-													score.score >= 6 ? 'text-white' :
-													'text-red'
-												}`}>
-													{score.score.toFixed(1)}
-												</span>
-											</div>
-										</Link>
-									))
+									scores.map((score: any) => {
+										const tasterImageUrl = score.tasters?.ai_profile_image_url || score.tasters?.profile_pic;
+										return (
+											<Link
+												key={score.id}
+												href={`/taster/${score.taster_id}`}
+												className="flex items-center justify-between py-2 border-b border-divider last:border-0 hover:bg-neon-cyan hover:bg-opacity-5 transition-colors px-2 -mx-2"
+											>
+												<div className="flex items-center gap-3 min-w-0">
+													<span className="text-neon-cyan">&gt;</span>
+													<div className="w-8 h-8 border border-divider overflow-hidden bg-black flex-shrink-0">
+														{tasterImageUrl ? (
+															<Image
+																src={tasterImageUrl}
+																alt={score.tasters?.name || 'Taster'}
+																width={32}
+																height={32}
+																className="w-full h-full object-cover"
+															/>
+														) : (
+															<div className="w-full h-full flex items-center justify-center text-xs text-muted">
+																{score.tasters?.name?.charAt(0)?.toUpperCase() || '?'}
+															</div>
+														)}
+													</div>
+													<span className="text-white truncate">{score.tasters?.name}</span>
+												</div>
+												<div className="flex items-center gap-3">
+													<BlockGauge value={score.score / 10} blockLength={10} />
+													<span className={`font-pixel text-base w-12 text-right ${
+														score.score >= 8 ? 'text-green' :
+														score.score >= 7 ? 'text-sake-gold' :
+														score.score >= 6 ? 'text-white' :
+														'text-red'
+													}`}>
+														{score.score.toFixed(1)}
+													</span>
+												</div>
+											</Link>
+										);
+									})
 								) : (
 									<div className="text-muted text-center py-8">
 										NO SCORES YET

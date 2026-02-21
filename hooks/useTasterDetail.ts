@@ -10,7 +10,7 @@ export function useTasterDetail(tasterId: string) {
       // Get taster details
       const { data: taster, error: tasterError } = await supabase
         .from("tasters")
-        .select("id, name, profile_pic, created_at")
+        .select("id, name, profile_pic, ai_profile_image_url, created_at")
         .eq("id", tasterId)
         .single();
       
@@ -28,7 +28,9 @@ export function useTasterDetail(tasterId: string) {
             sake_id,
             sakes (
               id,
-              name
+              name,
+              image_url,
+              ai_bottle_image_url
             )
           )
         `)

@@ -39,7 +39,8 @@ export function useSakeDetail(sakeId: string) {
             tasters (
               id,
               name,
-              profile_pic
+              profile_pic,
+              ai_profile_image_url
             ),
             tastings (
               id,

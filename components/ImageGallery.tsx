@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 type GalleryImage = {
   id: string;
   url: string;
-  type: "original" | "bottle_art" | "group_transform";
+  type: string;
   isAiGenerated?: boolean;
 };
 
@@ -45,10 +45,22 @@ export default function ImageGallery({ images, className = "" }: ImageGalleryPro
   const getTypeLabel = (type: string) => {
     switch (type) {
       case "bottle_art":
-        return "Ukiyo-e Bottle Art";
+      case "bottle":
+      case "bottle_image":
+      case "bottle_photo":
+        return "Bottle Image";
       case "group_transform":
-        return "Japanese Scene";
+      case "tasting":
+      case "tasting_image":
+      case "scene":
+        return "Tasting Image";
+      case "profile_pic":
+      case "rank_portrait":
+      case "profile":
+      case "profile_image":
+        return "Profile Picture";
       case "original":
+      case "original_photo":
         return "Original Photo";
       default:
         return "Photo";
