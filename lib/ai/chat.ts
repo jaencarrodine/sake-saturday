@@ -244,7 +244,7 @@ export const processMessage = async (
 
 		if (mediaUrls && mediaUrls.length > 0) {
 			systemPrompt +=
-				`\n\nCurrent inbound media URLs for this turn (use these exact URLs with process_sake_image or upload_image): ` +
+				`\n\nCurrent inbound media URLs for this turn (use these exact URLs with process_sake_image, process_taster_profile_image, process_group_photo_image, or upload_image): ` +
 				`${JSON.stringify(mediaUrls, null, 2)}. ` +
 				'Do not reuse older media URLs from conversation context if these are present.';
 		}
@@ -808,6 +808,18 @@ const updateConversationContext = async (
 					} else if (toolCall.toolName === 'process_sake_image') {
 						if (toolArgs && typeof toolArgs.sake_id === 'string') {
 							updatedContext.sake_id = toolArgs.sake_id;
+						}
+					} else if (toolCall.toolName === 'lookup_taster') {
+						if (toolArgs && typeof toolArgs.name === 'string') {
+							updatedContext.last_taster_name = toolArgs.name;
+						}
+					} else if (toolCall.toolName === 'process_taster_profile_image') {
+						if (toolArgs && typeof toolArgs.taster_id === 'string') {
+							updatedContext.last_taster_id = toolArgs.taster_id;
+						}
+					} else if (toolCall.toolName === 'process_group_photo_image') {
+						if (toolArgs && typeof toolArgs.tasting_id === 'string') {
+							updatedContext.tasting_id = toolArgs.tasting_id;
 						}
 					}
 				}

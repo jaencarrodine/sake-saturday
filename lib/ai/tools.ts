@@ -259,6 +259,30 @@ export const createTools = (context: ToolContext) => {
 		};
 	};
 
+	const tasterNeedsProfilePicture = (taster: Pick<Taster, 'profile_pic' | 'ai_profile_image_url'>): boolean =>
+		!taster.profile_pic && !taster.ai_profile_image_url;
+
+	const resolveTasterRankKey = async (
+		supabase: ReturnType<typeof createServiceClient>,
+		tasterId: string
+	): Promise<string> => {
+		try {
+			const { data: scores, error } = await supabase
+				.from('scores')
+				.select('tasting_id')
+				.eq('taster_id', tasterId);
+
+			if (error)
+				throw new Error(error.message);
+
+			const uniqueTastingIds = new Set((scores || []).map(score => score.tasting_id));
+			return getRank(uniqueTastingIds.size).key;
+		} catch (error) {
+			console.warn('[Tool: process_taster_profile_image] Falling back to default rank key:', error);
+			return 'murabito';
+		}
+	};
+
 	return {
 		send_message: tool({
 			description: 'Send an intermediate message to the user in the WhatsApp chat. Use this to acknowledge receipt, provide status updates, or share information before continuing processing. Do NOT use this for your final response.',
@@ -471,6 +495,8 @@ export const createTools = (context: ToolContext) => {
 		const { tasting_id, scores } = params;
 		const supabase = createServiceClient();
 		const processedScores = [];
+		const tastersRequiringProfilePicture: Array<{ id: string; name: string }> = [];
+		const trackedTasterIds = new Set<string>();
 
 		for (const scoreInput of scores) {
 			const tasterResult = await lookupTasterHelper(supabase, {
@@ -479,6 +505,18 @@ export const createTools = (context: ToolContext) => {
 			});
 
 			const taster = tasterResult.taster;
+			const shouldRequireProfilePicture =
+				tasterResult.created &&
+				tasterNeedsProfilePicture(taster) &&
+				!trackedTasterIds.has(taster.id);
+
+			if (shouldRequireProfilePicture) {
+				trackedTasterIds.add(taster.id);
+				tastersRequiringProfilePicture.push({
+					id: taster.id,
+					name: taster.name,
+				});
+			}
 
 			const { data: score, error: scoreError } = await supabase
 				.from('scores')
@@ -509,6 +547,8 @@ export const createTools = (context: ToolContext) => {
 			success: true,
 			scores: processedScores,
 			count: processedScores.length,
+			tasters_requiring_profile_picture: tastersRequiringProfilePicture,
+			requires_profile_picture: tastersRequiringProfilePicture.length > 0,
 			message: `Recorded ${processedScores.length} score(s)`,
 		};
 	},
@@ -516,7 +556,7 @@ export const createTools = (context: ToolContext) => {
 
 	lookup_taster: tool({
 		description:
-			'Find an existing taster by name or phone number, or create a new one.',
+			'Find an existing taster by name or phone number, or create a new one. If a new taster is created, you must collect a profile picture next using process_taster_profile_image.',
 		inputSchema: z.object({
 			name: z.string().describe('Name of the taster'),
 			phone: z.string().optional().describe('Phone number of the taster'),
@@ -533,7 +573,14 @@ export const createTools = (context: ToolContext) => {
 		const supabase = createServiceClient();
 		const result = await lookupTasterHelper(supabase, { name, phone: resolvedPhone });
 		console.log('[Tool: lookup_taster] Result:', result.created ? 'Created new taster' : 'Found existing taster', result.taster.id);
-		return result;
+		const requiresProfilePicture = result.created && tasterNeedsProfilePicture(result.taster);
+		return {
+			...result,
+			requires_profile_picture: requiresProfilePicture,
+			next_step: requiresProfilePicture
+				? `New taster ${result.taster.name} requires a profile photo. Ask for an image and use process_taster_profile_image.`
+				: null,
+		};
 	},
 	}),
 
@@ -954,7 +1001,7 @@ export const createTools = (context: ToolContext) => {
 				count_needing_setup: tastersNeedingSetup.length,
 				all_profiles_complete: tastersNeedingSetup.length === 0,
 				suggestion: tastersNeedingSetup.length > 0
-					? 'Ask the user if they want to set up profiles for tasters who are missing phone links or profile pictures. You can help them link phone numbers and generate profile pictures.'
+					? 'Ask the user if they want to set up profiles for tasters who are missing phone links or profile pictures. Use process_taster_profile_image once a profile photo is provided.'
 					: 'All tasters in this session have complete profiles.',
 			};
 		},
@@ -1078,45 +1125,172 @@ export const createTools = (context: ToolContext) => {
 		},
 	}),
 
-	attach_tasting_photo: tool({
+	process_taster_profile_image: tool({
 		description:
-			'Attach a group photo URL to a tasting record. Updates the tasting\'s group_photo_url field.',
+			'One-step taster profile pipeline: upload profile photo to permanent storage, attach it to the taster record, and auto-generate AI profile art.',
 		inputSchema: z.object({
-			tasting_id: z.string().describe('ID of the tasting to attach the photo to'),
-			image_url: z.string().describe('Public URL of the group photo to attach'),
+			taster_id: z.string().describe('ID of the taster whose profile image is being processed'),
+			media_url: z.string().optional().describe('Optional media URL override. If omitted, uses the most recent inbound image URL from this turn'),
+			folder: z.string().optional().describe('Optional folder name in the sake-images bucket (default: "profiles")'),
+			rank_key: z.string().optional().describe('Optional rank key for generation (defaults to rank inferred from tasting history)'),
+			generate_ai_art: z.boolean().optional().describe('Generate AI profile art after upload (default: true)'),
 		}),
-		execute: async ({ tasting_id, image_url }) => {
-			console.log('[Tool: attach_tasting_photo] Attaching photo to tasting:', tasting_id);
+		execute: async ({ taster_id, media_url, folder, rank_key, generate_ai_art }) => {
+			console.log('[Tool: process_taster_profile_image] Processing profile image for taster:', taster_id);
+			const selectedMediaUrl = media_url || currentMediaUrls[0];
+			if (!selectedMediaUrl)
+				throw new Error('No media URL available. Use media_url or provide an image in the current user message.');
+
 			const supabase = createServiceClient();
+			const folderName = folder || 'profiles';
+			const shouldGenerateAiArt = generate_ai_art !== false;
 
-			const { data: updatedTastings, error: updateError } = await supabase
+			const { publicUrl, resolvedDownloadUrl } = await uploadImageFromUrl({
+				mediaUrl: selectedMediaUrl,
+				folderName,
+				toolLabel: 'process_taster_profile_image',
+			});
+			console.log('[Tool: process_taster_profile_image] Uploaded image:', publicUrl);
+
+			const { data: attachedTaster, error: attachError } = await supabase
+				.from('tasters')
+				.update({
+					profile_pic: publicUrl,
+					source_photo_url: publicUrl,
+				})
+				.eq('id', taster_id)
+				.select()
+				.maybeSingle();
+
+			if (attachError)
+				throw new Error(`Failed to attach profile image to taster: ${attachError.message}`);
+
+			if (!attachedTaster)
+				throw new Error(`Taster with ID ${taster_id} not found or update was blocked`);
+
+			let updatedTaster = attachedTaster;
+			let generatedImageUrl: string | null = null;
+			let warning: string | null = null;
+			let resolvedRankKey: string | null = null;
+
+			if (shouldGenerateAiArt) {
+				if (imageGenerationsThisTurn >= MAX_IMAGE_GENERATIONS_PER_TURN) {
+					warning = 'Image generation skipped for this turn to avoid timeout.';
+				} else {
+					imageGenerationsThisTurn += 1;
+					resolvedRankKey = rank_key || await resolveTasterRankKey(supabase, taster_id);
+
+					const generationResult = await callImageGenerationApi({
+						toolLabel: 'process_taster_profile_image',
+						requestBody: {
+							type: 'rank_portrait',
+							tasterId: taster_id,
+							rankKey: resolvedRankKey,
+							imageUrl: publicUrl,
+						},
+					});
+					generatedImageUrl = generationResult.generatedImageUrl;
+					warning = generationResult.warning || null;
+
+					const { data: refreshedTaster, error: refreshError } = await supabase
+						.from('tasters')
+						.select('*')
+						.eq('id', taster_id)
+						.maybeSingle();
+
+					if (!refreshError && refreshedTaster)
+						updatedTaster = refreshedTaster;
+				}
+			}
+
+			console.log('[Tool: process_taster_profile_image] Completed successfully');
+			return {
+				success: true,
+				taster: updatedTaster,
+				public_url: publicUrl,
+				source_url: resolvedDownloadUrl,
+				generated_image_url: generatedImageUrl,
+				rank_key: resolvedRankKey,
+				warning,
+				message: generatedImageUrl
+					? 'Profile photo uploaded, attached, and AI portrait generated'
+					: 'Profile photo uploaded and attached to taster',
+			};
+		},
+	}),
+
+	process_group_photo_image: tool({
+		description:
+			'One-step group photo pipeline: upload group photo to permanent storage, attach it to the tasting record, and auto-generate AI group transform art.',
+		inputSchema: z.object({
+			tasting_id: z.string().describe('ID of the tasting to attach the group photo to'),
+			media_url: z.string().optional().describe('Optional media URL override. If omitted, uses the most recent inbound image URL from this turn'),
+			folder: z.string().optional().describe('Optional folder name in the sake-images bucket (default: "groups")'),
+			generate_ai_art: z.boolean().optional().describe('Generate AI group art after upload (default: true)'),
+		}),
+		execute: async ({ tasting_id, media_url, folder, generate_ai_art }) => {
+			console.log('[Tool: process_group_photo_image] Processing group photo for tasting:', tasting_id);
+			const selectedMediaUrl = media_url || currentMediaUrls[0];
+			if (!selectedMediaUrl)
+				throw new Error('No media URL available. Use media_url or provide an image in the current user message.');
+
+			const supabase = createServiceClient();
+			const folderName = folder || 'groups';
+			const shouldGenerateAiArt = generate_ai_art !== false;
+
+			const { publicUrl, resolvedDownloadUrl } = await uploadImageFromUrl({
+				mediaUrl: selectedMediaUrl,
+				folderName,
+				toolLabel: 'process_group_photo_image',
+			});
+			console.log('[Tool: process_group_photo_image] Uploaded image:', publicUrl);
+
+			const { data: updatedTasting, error: updateError } = await supabase
 				.from('tastings')
-				.update({ group_photo_url: image_url })
+				.update({ group_photo_url: publicUrl })
 				.eq('id', tasting_id)
-				.select();
+				.select()
+				.maybeSingle();
 
-			if (updateError) {
-				console.error('[Tool: attach_tasting_photo] Error:', updateError.message);
+			if (updateError)
 				throw new Error(`Failed to attach photo to tasting: ${updateError.message}`);
-			}
 
-			if (!updatedTastings || updatedTastings.length === 0) {
-				console.error('[Tool: attach_tasting_photo] No tasting found with ID:', tasting_id);
+			if (!updatedTasting)
 				throw new Error(`Tasting with ID ${tasting_id} not found or update was blocked`);
+
+			let generatedImageUrl: string | null = null;
+			let warning: string | null = null;
+
+			if (shouldGenerateAiArt) {
+				if (imageGenerationsThisTurn >= MAX_IMAGE_GENERATIONS_PER_TURN) {
+					warning = 'Image generation skipped for this turn to avoid timeout.';
+				} else {
+					imageGenerationsThisTurn += 1;
+					const generationResult = await callImageGenerationApi({
+						toolLabel: 'process_group_photo_image',
+						requestBody: {
+							type: 'group_transform',
+							tastingId: tasting_id,
+							imageUrl: publicUrl,
+						},
+					});
+
+					generatedImageUrl = generationResult.generatedImageUrl;
+					warning = generationResult.warning || null;
+				}
 			}
 
-			if (updatedTastings.length > 1) {
-				console.error('[Tool: attach_tasting_photo] Multiple tastings updated, expected one:', updatedTastings.length);
-				throw new Error(`Expected to update one tasting, but updated ${updatedTastings.length}`);
-			}
-
-			const updatedTasting = updatedTastings[0];
-
-			console.log('[Tool: attach_tasting_photo] Successfully attached photo');
+			console.log('[Tool: process_group_photo_image] Completed successfully');
 			return {
 				success: true,
 				tasting: updatedTasting,
-				message: 'Group photo attached to tasting successfully',
+				public_url: publicUrl,
+				source_url: resolvedDownloadUrl,
+				generated_image_url: generatedImageUrl,
+				warning,
+				message: generatedImageUrl
+					? 'Group photo uploaded, attached, and AI group art generated'
+					: 'Group photo uploaded and attached to tasting',
 			};
 		},
 	}),
@@ -1174,7 +1348,7 @@ export const createTools = (context: ToolContext) => {
 			if (image_url && (image_url.includes('twilio.com') || image_url.includes('twiliocdn.com'))) {
 				throw new Error(
 					'Twilio media URLs expire quickly and cannot be used directly. ' +
-					'Please first use process_sake_image (or upload_image for non-bottle flows) to upload the image to permanent storage, ' +
+					'Please first use process_sake_image, process_taster_profile_image, process_group_photo_image, or upload_image to upload the image to permanent storage, ' +
 					'then use the returned public_url with generate_ai_image. ' +
 					'Make sure to use a CURRENT media URL from the most recent message, not from conversation history.'
 				);
