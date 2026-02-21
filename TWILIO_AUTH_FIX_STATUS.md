@@ -1,63 +1,100 @@
 # Twilio Media Authentication Fix - Status Report
 
 ## Summary
-The Twilio media URL authentication fix has been implemented and is present in the codebase, but production is running outdated build artifacts.
+The Twilio media URL authentication is working, but we're encountering 404 errors because the media resources don't exist or have expired. Added Twilio SDK fallback to handle edge cases.
 
 ## What Was Fixed
 
 ### 1. Twilio Authentication (Commit: 0e269e2, Merged in PR #23)
-- Detects Twilio URLs containing `twilio.com`
+- Detects Twilio URLs containing `api.twilio.com`
 - Adds HTTP Basic Auth using `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN`
 - Properly handles 301/302 redirects (default fetch behavior)
 
-### 2. Enhanced Error Logging (Commit: e704ab2, Current Branch)
+### 2. Enhanced Error Logging (Commit: e704ab2)
 - Logs response status, statusText, and response body on download failures  
 - Makes debugging much easier
 
+### 3. Twilio SDK Fallback (Commit: d895bab, Latest)
+- Added fallback to use Twilio SDK when direct URL returns 404
+- Extracts MessageSid and MediaSid from URL to fetch via SDK
+- Uses SDK's `media.uri` to get correct download endpoint
+- Enhanced logging shows status, content-type, and truncated response body
+
 ## Current Status
 
-### ✅ Code is Correct
-- Main branch (`890d63d`) has the Twilio auth fix
-- Current branch (`cursor/twilio-media-authentication-59a5`) has both the fix AND enhanced logging
+### ✅ Code is Deployed
+- Enhanced error logging is working (confirmed by logs showing response body)
+- HTTP Basic Auth is being applied to Twilio URLs
+- Getting proper Twilio API error responses (not auth errors)
 
-### ❌ Production is Running Old Code
-Your error logs from `2026-02-21 03:03:44 UTC` show:
-```
-[Tool: upload_image] Error: Error: Failed to download image: 404 Not Found
-```
-
-This error format indicates the production deployment is missing BOTH:
-1. The Twilio authentication (would prevent the 404)
-2. The enhanced error logging (would show response body)
-
-### ❌ Local Build Fails
-Cannot rebuild locally due to Next.js/Turbopack Google Fonts network errors.
-
-## Required Actions
-
-### 1. Environment Variables (CRITICAL)
-Verify these are set in your deployment platform (Vercel/etc):
-```
-TWILIO_ACCOUNT_SID=ACb4bf25c902f7d471001190a4ba381a77
-TWILIO_AUTH_TOKEN=<your-auth-token>
+### ⚠️ Issue: Twilio Media 404 Errors
+Your error logs from `2026-02-21 03:12:42 UTC` show:
+```xml
+<TwilioResponse>
+  <RestException>
+    <Code>20404</Code>
+    <Message>The requested resource /2010-04-01/Accounts/.../Messages/.../Media/... was not found</Message>
+  </RestException>
+</TwilioResponse>
 ```
 
-**How to check in Vercel:**
-1. Go to your project settings
-2. Navigate to Environment Variables
-3. Ensure both variables are set for Production, Preview, and Development
-4. Click "Redeploy" to apply changes
+This indicates:
+1. ✅ Authentication IS working (we're getting a Twilio error response, not an auth error)
+2. ❌ The specific media resources don't exist or have expired
+3. ❌ Possible issue with how WhatsApp media URLs are provided in webhooks
 
-### 2. Trigger Production Rebuild
-Since the code is correct in `main`, you need to:
-- Option A: Merge this branch to `main` and redeploy
-- Option B: Manually trigger a redeploy of `main` in your deployment platform
+### 🔧 New Fix: Twilio SDK Fallback
+Added intelligent fallback that will:
+1. Try direct URL download first (existing behavior)
+2. If 404, extract MessageSid and MediaSid from URL
+3. Use Twilio SDK to fetch media metadata and get correct URI
+4. Retry download with SDK-provided URI
 
-### 3. Verify Fix Works
-After redeployment, test with a WhatsApp media message and check logs for:
-- ✅ No "404 Not Found" errors
-- ✅ Enhanced error logging showing response body if issues persist
-- ✅ Successful image uploads from Twilio media URLs
+## Possible Causes of 404 Errors
+
+### 1. Media URL Expiration
+Twilio media URLs can expire after a certain period. WhatsApp media might only be available for a limited time.
+
+### 2. Incorrect MediaUrl Format
+The MediaUrl from WhatsApp webhooks might be in a different format than SMS/MMS. Need to verify what Twilio actually sends in the `MediaUrl0` parameter.
+
+### 3. Media Not Yet Available
+There might be a timing issue where the webhook is received before the media is fully uploaded to Twilio's servers.
+
+## Next Steps for Debugging
+
+### 1. Deploy Latest Changes
+Merge this branch to trigger redeployment with the SDK fallback:
+```bash
+# The latest commit (d895bab) includes SDK fallback
+git checkout main
+git merge cursor/twilio-media-authentication-59a5
+git push
+```
+
+### 2. Check Logs After Next Media Message
+Look for these new log lines:
+```
+[Tool: upload_image] Detected Twilio URL, using HTTP Basic Auth
+[Tool: upload_image] Response status: ... Content-Type: ...
+[Tool: upload_image] Attempting to fetch media via Twilio SDK as fallback
+[Tool: upload_image] Media fetched via SDK, uri: ...
+```
+
+### 3. Alternative: Log Raw MediaUrl from Webhook
+Add temporary logging in `app/api/whatsapp/route.ts` to see what Twilio actually sends:
+```typescript
+for (let i = 0; i < numMedia; i++) {
+  const mediaUrl = formData.get(`MediaUrl${i}`) as string;
+  console.log(`[Webhook] RAW MediaUrl${i}:`, mediaUrl);
+  if (mediaUrl) {
+    mediaUrls.push(mediaUrl);
+  }
+}
+```
+
+### 4. Test with Fresh Media
+Try sending a brand new media message and see if it works immediately (ruling out expiration).
 
 ## Files Changed
 
