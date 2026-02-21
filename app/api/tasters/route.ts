@@ -7,8 +7,12 @@ import { withApiAuth } from '@/lib/api/auth';
 type Taster = Database['public']['Tables']['tasters']['Row'];
 
 const sanitizeTaster = (taster: Taster) => {
-	const { phone_number: _, phone_hash: __, ...safeTaster } = taster;
-	return safeTaster;
+	return {
+		id: taster.id,
+		name: taster.name,
+		profile_pic: taster.profile_pic,
+		created_at: taster.created_at,
+	};
 };
 
 // POST /api/tasters - Create or find taster by phone hash or name

@@ -5,6 +5,7 @@ import { createTools, createAdminTools } from './tools';
 import { processMediaUrls } from './vision';
 import { resolveTasterByPhone } from '@/lib/phoneHash';
 import { createServiceClient } from '@/lib/supabase/server';
+import type { Database } from '@/types/supabase/databaseTypes';
 import type { Twilio } from 'twilio';
 
 type Message = 
@@ -32,6 +33,17 @@ type LinkedTasterProfile = {
 	id: string;
 	name: string;
 	profile_pic: string | null;
+};
+
+type ToolCallStep = {
+	toolName: string;
+	args?: unknown;
+};
+
+type GenerateTextResult = {
+	steps?: Array<{
+		toolCalls?: ToolCallStep[];
+	}>;
 };
 
 export const processMessage = async (
@@ -669,17 +681,17 @@ const mergeConsecutiveMessages = (messages: Message[]): Message[] => {
 					? nextMessage.content
 					: [{ type: 'text' as const, text: String(nextMessage.content) }];
 
-			const mergedContent: any = [...currentContent, ...nextContent];
+			const mergedContent = [...currentContent, ...nextContent];
 			
 			if (currentMessage.role === 'user') {
 				currentMessage = {
 					role: 'user' as const,
-					content: mergedContent,
+					content: mergedContent as UserContent,
 				};
 			} else {
 				currentMessage = {
 					role: 'assistant' as const,
-					content: mergedContent,
+					content: mergedContent as AssistantContent,
 				};
 			}
 		} else {
@@ -701,7 +713,7 @@ const mergeConsecutiveMessages = (messages: Message[]): Message[] => {
 const updateConversationContext = async (
 	supabase: ReturnType<typeof createServiceClient>,
 	phoneNumber: string,
-	result: any
+	result: GenerateTextResult
 ): Promise<void> => {
 	const start = Date.now();
 	try {
@@ -739,7 +751,7 @@ const updateConversationContext = async (
 			.from('conversation_state')
 			.upsert({
 				phone_number: phoneNumber,
-				context: updatedContext as any,
+				context: updatedContext as Database['public']['Tables']['conversation_state']['Insert']['context'],
 				updated_at: new Date().toISOString(),
 			});
 
