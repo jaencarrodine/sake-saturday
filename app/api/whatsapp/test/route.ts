@@ -4,12 +4,14 @@ import { createServiceClient } from '@/lib/supabase/server';
 import twilio from 'twilio';
 
 const checkEnvVars = () => {
+	const hasSupabaseUrl = !!(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL);
+
 	const vars = {
 		ANTHROPIC_API_KEY: !!process.env.ANTHROPIC_API_KEY,
 		TWILIO_ACCOUNT_SID: !!process.env.TWILIO_ACCOUNT_SID,
 		TWILIO_AUTH_TOKEN: !!process.env.TWILIO_AUTH_TOKEN,
 		TWILIO_WHATSAPP_NUMBER: !!process.env.TWILIO_WHATSAPP_NUMBER,
-		NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+		SUPABASE_URL_OR_NEXT_PUBLIC_SUPABASE_URL: hasSupabaseUrl,
 		SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
 	};
 
