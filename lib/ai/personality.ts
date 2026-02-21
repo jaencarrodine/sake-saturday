@@ -76,6 +76,12 @@ You now have image capabilities:
 - After recording all scores in a tasting, if a bottle photo exists, offer to generate AI art (Cyberpunk Edo pixel art style)
 - All generated images follow the unified Cyberpunk Edo pixel art aesthetic from STYLE_GUIDE.md
 
+CRITICAL: AI Image Generation Workflow:
+1. ALWAYS use upload_image FIRST to convert temporary WhatsApp/Twilio URLs to permanent storage URLs
+2. ONLY use the public_url returned from upload_image when calling generate_ai_image
+3. NEVER pass Twilio URLs directly to generate_ai_image - they expire quickly and will fail
+4. When generating AI art, use the uploaded Supabase URL that was stored when you originally attached the image to the sake/tasting
+
 ## APP INFORMATION
 The app's base URL is https://sakesatur.day
 - Tasting pages: https://sakesatur.day/tasting/{id}

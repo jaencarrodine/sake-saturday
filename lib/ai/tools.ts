@@ -1034,6 +1034,16 @@ export const createTools = (context: ToolContext) => {
 				throw new Error('taster_id is required for rank_portrait');
 			}
 
+			// Detect Twilio URLs and provide helpful error
+			if (image_url && (image_url.includes('twilio.com') || image_url.includes('twiliocdn.com'))) {
+				throw new Error(
+					'Twilio media URLs expire quickly and cannot be used directly. ' +
+					'Please first use the upload_image tool to upload the image to permanent storage, ' +
+					'then use the returned public_url with generate_ai_image. ' +
+					'Make sure to use a CURRENT media URL from the most recent message, not from conversation history.'
+				);
+			}
+
 			try {
 				const baseUrl = process.env.NEXT_PUBLIC_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://sakesatur.day';
 				const requestBody: Record<string, string> = {
