@@ -17,6 +17,7 @@ type GeminiResponsePart = {
 
 const GEMINI_API_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent";
+const SUPABASE_STORAGE_PATH_PREFIX = "/storage/v1/object/";
 
 export const maxDuration = 300;
 
@@ -137,6 +138,73 @@ const getFileExtensionForMimeType = (mimeType: string): string => {
   return "jpg";
 };
 
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : "Unknown error";
+
+const getSupabaseUrlFromEnv = (): string | null =>
+  process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || null;
+
+const parseUrl = (value: string): URL | null => {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+};
+
+const getSupabaseStorageHostFallbackUrl = (sourceUrl: string): string | null => {
+  const source = parseUrl(sourceUrl);
+  const configuredSupabaseUrl = getSupabaseUrlFromEnv();
+  const configured = configuredSupabaseUrl ? parseUrl(configuredSupabaseUrl) : null;
+
+  if (!source || !configured) return null;
+  if (!source.hostname.endsWith(".supabase.co")) return null;
+  if (source.hostname === configured.hostname) return null;
+  if (!source.pathname.startsWith(SUPABASE_STORAGE_PATH_PREFIX)) return null;
+
+  return `${configured.origin}${source.pathname}${source.search}`;
+};
+
+const getFetchErrorCode = (error: unknown): string | null => {
+  if (!(error instanceof Error) || !("cause" in error)) return null;
+  const cause = (error as Error & { cause?: unknown }).cause;
+  if (!cause || typeof cause !== "object" || !("code" in cause)) return null;
+  const code = (cause as { code?: unknown }).code;
+  return typeof code === "string" ? code : null;
+};
+
+const getFetchErrorHostname = (error: unknown): string | null => {
+  if (!(error instanceof Error) || !("cause" in error)) return null;
+  const cause = (error as Error & { cause?: unknown }).cause;
+  if (!cause || typeof cause !== "object" || !("hostname" in cause)) return null;
+  const hostname = (cause as { hostname?: unknown }).hostname;
+  return typeof hostname === "string" ? hostname : null;
+};
+
+const fetchSourceImage = async (
+  sourceUrl: string
+): Promise<{ response: Response; resolvedUrl: string }> => {
+  try {
+    const response = await fetch(sourceUrl);
+    return { response, resolvedUrl: sourceUrl };
+  } catch (error) {
+    const fallbackUrl = getSupabaseStorageHostFallbackUrl(sourceUrl);
+    if (!fallbackUrl) throw error;
+
+    const errorCode = getFetchErrorCode(error);
+    const failedHostname = getFetchErrorHostname(error);
+    console.warn("Source image fetch failed, retrying with configured Supabase host", {
+      sourceUrl,
+      fallbackUrl,
+      errorCode,
+      failedHostname,
+    });
+
+    const fallbackResponse = await fetch(fallbackUrl);
+    return { response: fallbackResponse, resolvedUrl: fallbackUrl };
+  }
+};
+
 export async function POST(request: Request) {
   try {
     const { imageUrl, type, tastingId, tasterId, rankKey } = await request.json();
@@ -197,21 +265,54 @@ export async function POST(request: Request) {
           mimeType = mimeMatch[1];
         }
       } else {
-        const response = await fetch(imageUrl);
-        
-        if (!response.ok) {
+        let sourceImageResponse: Response;
+        let resolvedImageUrl = imageUrl;
+        try {
+          const fetchResult = await fetchSourceImage(imageUrl);
+          sourceImageResponse = fetchResult.response;
+          resolvedImageUrl = fetchResult.resolvedUrl;
+        } catch (error) {
+          const errorCode = getFetchErrorCode(error);
+          const failedHostname = getFetchErrorHostname(error);
+
+          console.error("Failed to fetch source image", {
+            imageUrl,
+            errorCode,
+            failedHostname,
+            error: getErrorMessage(error),
+          });
+
+          const dnsErrorHint =
+            errorCode === "ENOTFOUND"
+              ? " The source hostname could not be resolved. If this image URL points to an old Supabase project, re-upload the image or update the URL."
+              : "";
+
           return NextResponse.json(
-            { error: `Failed to fetch image from URL: ${response.statusText}` },
+            {
+              error: `Failed to fetch source image URL.${dnsErrorHint}`,
+              details: getErrorMessage(error),
+            },
             { status: 400 }
           );
         }
 
-        const contentType = response.headers.get("content-type");
+        if (!sourceImageResponse.ok) {
+          return NextResponse.json(
+            {
+              error: `Failed to fetch image from URL: ${sourceImageResponse.statusText}`,
+              status: sourceImageResponse.status,
+              resolvedImageUrl,
+            },
+            { status: 400 }
+          );
+        }
+
+        const contentType = sourceImageResponse.headers.get("content-type");
         if (contentType) {
           mimeType = contentType;
         }
 
-        const blob = await response.blob();
+        const blob = await sourceImageResponse.blob();
         const buffer = await blob.arrayBuffer();
         
         const sizeInMB = buffer.byteLength / (1024 * 1024);
@@ -316,54 +417,79 @@ export async function POST(request: Request) {
 
     const base64Image = `data:${generatedImageMimeType};base64,${generatedImageData}`;
 
-    const supabase = await createClient();
     const timestamp = Date.now();
     const randomStr = Math.random().toString(36).substring(2, 15);
     const extension = getFileExtensionForMimeType(generatedImageMimeType);
     const fileName = `${imageType}-${timestamp}-${randomStr}.${extension}`;
 
     const blob = await fetch(base64Image).then((r) => r.blob());
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from("tasting-images")
-      .upload(fileName, blob, {
-        contentType: generatedImageMimeType,
-        cacheControl: "3600",
-      });
+    let publicUrl: string;
+    let supabase = null as Awaited<ReturnType<typeof createClient>> | null;
+    try {
+      supabase = await createClient();
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("tasting-images")
+        .upload(fileName, blob, {
+          contentType: generatedImageMimeType,
+          cacheControl: "3600",
+        });
 
-    if (uploadError || !uploadData) {
-      console.error("Storage upload error:", uploadError);
-      return NextResponse.json(
-        { generatedImageUrl: base64Image, warning: "Could not upload to storage, returning base64" }
-      );
-    }
-
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from("tasting-images").getPublicUrl(uploadData.path);
-
-    if ((imageType === "profile_pic" || imageType === "rank_portrait") && tasterId) {
-      const { data: tasterRecord, error: tasterUpdateError } = await supabase
-        .from("tasters")
-        .update({
-          ai_profile_image_url: publicUrl,
-          rank_at_generation: rankKey || "murabito",
-        })
-        .eq("id", tasterId)
-        .select()
-        .single();
-
-      if (tasterUpdateError) {
-        console.error("Taster update error:", tasterUpdateError);
-        return NextResponse.json(
-          { generatedImageUrl: publicUrl, warning: "Image generated but taster profile not updated" }
-        );
+      if (uploadError || !uploadData) {
+        console.error("Storage upload error:", uploadError);
+        return NextResponse.json({
+          generatedImageUrl: base64Image,
+          warning: "Could not upload to storage, returning base64",
+        });
       }
 
-      return NextResponse.json({
-        generatedImageUrl: publicUrl,
-        tasterRecord,
+      const {
+        data: { publicUrl: generatedPublicUrl },
+      } = supabase.storage.from("tasting-images").getPublicUrl(uploadData.path);
+      publicUrl = generatedPublicUrl;
+    } catch (error) {
+      console.error("Storage upload exception:", {
+        error: getErrorMessage(error),
+        errorCode: getFetchErrorCode(error),
       });
-    } else {
+      return NextResponse.json({
+        generatedImageUrl: base64Image,
+        warning:
+          "Image generated but Supabase storage is unreachable. Returning base64 image instead.",
+      });
+    }
+
+    if (!supabase) {
+      return NextResponse.json({
+        generatedImageUrl: base64Image,
+        warning: "Image generated but storage client was not initialized.",
+      });
+    }
+
+    try {
+      if ((imageType === "profile_pic" || imageType === "rank_portrait") && tasterId) {
+        const { data: tasterRecord, error: tasterUpdateError } = await supabase
+          .from("tasters")
+          .update({
+            ai_profile_image_url: publicUrl,
+            rank_at_generation: rankKey || "murabito",
+          })
+          .eq("id", tasterId)
+          .select()
+          .single();
+
+        if (tasterUpdateError) {
+          console.error("Taster update error:", tasterUpdateError);
+          return NextResponse.json(
+            { generatedImageUrl: publicUrl, warning: "Image generated but taster profile not updated" }
+          );
+        }
+
+        return NextResponse.json({
+          generatedImageUrl: publicUrl,
+          tasterRecord,
+        });
+      }
+
       const { data: imageRecord, error: dbError } = await supabase
         .from("tasting_images")
         .insert({
@@ -386,6 +512,15 @@ export async function POST(request: Request) {
       return NextResponse.json({
         generatedImageUrl: publicUrl,
         imageRecord,
+      });
+    } catch (error) {
+      console.error("Database persistence exception:", {
+        error: getErrorMessage(error),
+        errorCode: getFetchErrorCode(error),
+      });
+      return NextResponse.json({
+        generatedImageUrl: publicUrl,
+        warning: "Image generated but database persistence failed.",
       });
     }
   } catch (error) {
