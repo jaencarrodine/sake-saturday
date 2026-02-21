@@ -616,6 +616,86 @@ export const createTools = (context: ToolContext) => {
 			};
 		},
 	}),
+
+	check_tasting_profiles: tool({
+		description:
+			'Check which tasters in a completed tasting session need profile setup (missing phone link or profile picture). Use this after recording scores to prompt users to set up profiles for their tasting group.',
+		inputSchema: z.object({
+			tasting_id: z.string().describe('ID of the tasting session to check'),
+		}),
+		execute: async ({ tasting_id }) => {
+			console.log('[Tool: check_tasting_profiles] Checking profiles for tasting:', tasting_id);
+			const supabase = createServiceClient();
+
+			const { data: tasting, error: tastingError } = await supabase
+				.from('tastings')
+				.select(`
+					id,
+					scores (
+						tasters:taster_id (
+							id,
+							name,
+							profile_pic
+						)
+					)
+				`)
+				.eq('id', tasting_id)
+				.single();
+
+			if (tastingError || !tasting) {
+				console.error('[Tool: check_tasting_profiles] Error fetching tasting:', tastingError?.message);
+				throw new Error(`Failed to fetch tasting: ${tastingError?.message || 'Not found'}`);
+			}
+
+			const scores = tasting.scores || [];
+			const tasterIds = new Set<string>();
+			const tastersNeedingSetup: Array<{
+				id: string;
+				name: string;
+				has_profile_pic: boolean;
+				has_phone_link: boolean;
+			}> = [];
+
+			for (const scoreData of scores) {
+				const tasterData = scoreData.tasters as unknown as { id: string; name: string; profile_pic: string | null } | null;
+				if (tasterData && !tasterIds.has(tasterData.id)) {
+					tasterIds.add(tasterData.id);
+
+					const { data: phoneLink } = await supabase
+						.from('taster_phone_links')
+						.select('phone_hash')
+						.eq('taster_id', tasterData.id)
+						.maybeSingle();
+
+					const hasPhoneLink = !!phoneLink;
+					const hasProfilePic = !!tasterData.profile_pic;
+
+					if (!hasPhoneLink || !hasProfilePic) {
+						tastersNeedingSetup.push({
+							id: tasterData.id,
+							name: tasterData.name,
+							has_profile_pic: hasProfilePic,
+							has_phone_link: hasPhoneLink,
+						});
+					}
+				}
+			}
+
+			console.log('[Tool: check_tasting_profiles] Found', tastersNeedingSetup.length, 'tasters needing setup');
+
+			return {
+				success: true,
+				tasting_id,
+				total_tasters: tasterIds.size,
+				tasters_needing_setup: tastersNeedingSetup,
+				count_needing_setup: tastersNeedingSetup.length,
+				all_profiles_complete: tastersNeedingSetup.length === 0,
+				suggestion: tastersNeedingSetup.length > 0
+					? 'Ask the user if they want to set up profiles for tasters who are missing phone links or profile pictures. You can help them link phone numbers and generate profile pictures.'
+					: 'All tasters in this session have complete profiles.',
+			};
+		},
+	}),
 	};
 };
 
