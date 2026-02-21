@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 type FrameProps = {
   children: React.ReactNode;
   title?: string;
@@ -22,6 +24,14 @@ export default function Frame({ children, title = "SAKE SATURDAY", className = "
         }}>
           酒 の 土 曜 日
         </div>
+        <nav className="mt-4 flex items-center justify-center gap-6 text-xs uppercase tracking-[0.2em]">
+          <Link href="/" className="text-neon-cyan transition-opacity hover:opacity-80">
+            Home
+          </Link>
+          <Link href="/chat" className="text-neon-pink transition-opacity hover:opacity-80">
+            AI Chat
+          </Link>
+        </nav>
       </header>
       
       {/* Content */}
