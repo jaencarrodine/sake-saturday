@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-type ImageType = "bottle_art" | "group_transform" | "profile_pic";
+type ImageType = "bottle_art" | "group_transform" | "profile_pic" | "rank_portrait";
 
 const GEMINI_API_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent";
@@ -81,9 +81,9 @@ export async function POST(request: Request) {
 
     const imageType = type as ImageType;
     
-    if (imageType === "profile_pic" && !tasterId) {
+    if ((imageType === "profile_pic" || imageType === "rank_portrait") && !tasterId) {
       return NextResponse.json(
-        { error: "tasterId is required for profile_pic type" },
+        { error: "tasterId is required for profile_pic and rank_portrait types" },
         { status: 400 }
       );
     }
@@ -104,14 +104,14 @@ export async function POST(request: Request) {
     }
 
     let prompt: string;
-    if (imageType === "profile_pic") {
+    if (imageType === "profile_pic" || imageType === "rank_portrait") {
       const resolvedRankKey = rankKey || "murabito";
       prompt = getProfilePicPrompt(resolvedRankKey);
     } else {
       prompt = PROMPTS[imageType];
       if (!prompt) {
         return NextResponse.json(
-          { error: "Invalid image type. Must be bottle_art, group_transform, or profile_pic" },
+          { error: "Invalid image type. Must be bottle_art, group_transform, profile_pic, or rank_portrait" },
           { status: 400 }
         );
       }
@@ -223,7 +223,7 @@ export async function POST(request: Request) {
       data: { publicUrl },
     } = supabase.storage.from("tasting-images").getPublicUrl(uploadData.path);
 
-    if (imageType === "profile_pic" && tasterId) {
+    if ((imageType === "profile_pic" || imageType === "rank_portrait") && tasterId) {
       const { data: tasterRecord, error: tasterUpdateError } = await supabase
         .from("tasters")
         .update({
