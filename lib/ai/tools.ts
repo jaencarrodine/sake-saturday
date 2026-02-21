@@ -60,6 +60,7 @@ export const createTools = (context: ToolContext) => {
 			alc_percentage: z.number().optional().describe('Alcohol percentage (ABV)'),
 			smv: z.number().optional().describe('Sake Meter Value (sweetness/dryness)'),
 			bottling_company: z.string().optional().describe('Brewery/bottling company name'),
+			image_url: z.string().optional().describe('URL of the original bottle photo'),
 		}),
 	execute: async (params: {
 		name: string;
@@ -71,9 +72,10 @@ export const createTools = (context: ToolContext) => {
 		alc_percentage?: number;
 		smv?: number;
 		bottling_company?: string;
+		image_url?: string;
 	}) => {
 		console.log('[Tool: identify_sake] Executing with params:', JSON.stringify(params));
-		const { name, prefecture, grade, type, rice, polishing_ratio, alc_percentage, smv, bottling_company } = params;
+		const { name, prefecture, grade, type, rice, polishing_ratio, alc_percentage, smv, bottling_company, image_url } = params;
 		const supabase = createServiceClient();
 
 		const { data: existingSake, error: findError } = await supabase
@@ -84,6 +86,25 @@ export const createTools = (context: ToolContext) => {
 
 		if (!findError && existingSake) {
 			console.log('[Tool: identify_sake] Found existing sake:', existingSake.id);
+			if (image_url && !existingSake.image_url) {
+				const { data: updatedSake, error: updateError } = await supabase
+					.from('sakes')
+					.update({ image_url })
+					.eq('id', existingSake.id)
+					.select()
+					.single();
+
+				if (updateError) {
+					console.error('[Tool: identify_sake] Error updating sake image:', updateError.message);
+				} else {
+					return {
+						success: true,
+						sake: updatedSake,
+						created: false,
+						message: 'Found existing sake and updated with image',
+					};
+				}
+			}
 			return {
 				success: true,
 				sake: existingSake,
@@ -104,6 +125,7 @@ export const createTools = (context: ToolContext) => {
 				alc_percentage,
 				smv,
 				bottling_company,
+				image_url,
 			})
 			.select()
 			.single();
@@ -694,6 +716,200 @@ export const createTools = (context: ToolContext) => {
 					? 'Ask the user if they want to set up profiles for tasters who are missing phone links or profile pictures. You can help them link phone numbers and generate profile pictures.'
 					: 'All tasters in this session have complete profiles.',
 			};
+		},
+	}),
+
+	upload_image: tool({
+		description:
+			'Download an image from a URL (e.g., WhatsApp/Twilio media URL) and upload it to Supabase Storage. Returns the public URL for the uploaded image.',
+		inputSchema: z.object({
+			media_url: z.string().describe('The URL of the image to download and upload'),
+			folder: z.string().optional().describe('Optional folder name in the sake-images bucket (default: "uploads")'),
+		}),
+		execute: async ({ media_url, folder }) => {
+			console.log('[Tool: upload_image] Uploading image from:', media_url);
+			const supabase = createServiceClient();
+			const folderName = folder || 'uploads';
+
+			try {
+				const response = await fetch(media_url);
+				if (!response.ok) {
+					throw new Error(`Failed to download image: ${response.statusText}`);
+				}
+
+				const blob = await response.blob();
+				const timestamp = Date.now();
+				const randomStr = Math.random().toString(36).substring(2, 15);
+				const fileName = `${folderName}/${timestamp}-${randomStr}.jpg`;
+
+				const { data: uploadData, error: uploadError } = await supabase.storage
+					.from('sake-images')
+					.upload(fileName, blob, {
+						contentType: blob.type || 'image/jpeg',
+						cacheControl: '3600',
+					});
+
+				if (uploadError || !uploadData) {
+					console.error('[Tool: upload_image] Upload error:', uploadError);
+					throw new Error(`Failed to upload image: ${uploadError?.message || 'Unknown error'}`);
+				}
+
+				const {
+					data: { publicUrl },
+				} = supabase.storage.from('sake-images').getPublicUrl(uploadData.path);
+
+				console.log('[Tool: upload_image] Successfully uploaded to:', publicUrl);
+				return {
+					success: true,
+					public_url: publicUrl,
+					message: 'Image uploaded successfully',
+				};
+			} catch (error) {
+				console.error('[Tool: upload_image] Error:', error);
+				throw new Error(`Failed to upload image: ${error instanceof Error ? error.message : String(error)}`);
+			}
+		},
+	}),
+
+	attach_sake_image: tool({
+		description:
+			'Attach an image URL to a sake record (original bottle photo). Updates the sake\'s image_url field.',
+		inputSchema: z.object({
+			sake_id: z.string().describe('ID of the sake to attach the image to'),
+			image_url: z.string().describe('Public URL of the image to attach'),
+		}),
+		execute: async ({ sake_id, image_url }) => {
+			console.log('[Tool: attach_sake_image] Attaching image to sake:', sake_id);
+			const supabase = createServiceClient();
+
+			const { data: updatedSake, error: updateError } = await supabase
+				.from('sakes')
+				.update({ image_url })
+				.eq('id', sake_id)
+				.select()
+				.single();
+
+			if (updateError) {
+				console.error('[Tool: attach_sake_image] Error:', updateError.message);
+				throw new Error(`Failed to attach image to sake: ${updateError.message}`);
+			}
+
+			console.log('[Tool: attach_sake_image] Successfully attached image');
+			return {
+				success: true,
+				sake: updatedSake,
+				message: 'Image attached to sake successfully',
+			};
+		},
+	}),
+
+	attach_tasting_photo: tool({
+		description:
+			'Attach a group photo URL to a tasting record. Updates the tasting\'s group_photo_url field.',
+		inputSchema: z.object({
+			tasting_id: z.string().describe('ID of the tasting to attach the photo to'),
+			image_url: z.string().describe('Public URL of the group photo to attach'),
+		}),
+		execute: async ({ tasting_id, image_url }) => {
+			console.log('[Tool: attach_tasting_photo] Attaching photo to tasting:', tasting_id);
+			const supabase = createServiceClient();
+
+			const { data: updatedTasting, error: updateError } = await supabase
+				.from('tastings')
+				.update({ group_photo_url: image_url })
+				.eq('id', tasting_id)
+				.select()
+				.single();
+
+			if (updateError) {
+				console.error('[Tool: attach_tasting_photo] Error:', updateError.message);
+				throw new Error(`Failed to attach photo to tasting: ${updateError.message}`);
+			}
+
+			console.log('[Tool: attach_tasting_photo] Successfully attached photo');
+			return {
+				success: true,
+				tasting: updatedTasting,
+				message: 'Group photo attached to tasting successfully',
+			};
+		},
+	}),
+
+	generate_ai_image: tool({
+		description:
+			'Generate AI art using the /api/images/generate endpoint. Can generate bottle art, group transforms, or rank portraits. Saves the generated image URL to the appropriate record.',
+		inputSchema: z.object({
+			type: z.enum(['bottle_art', 'group_transform', 'rank_portrait']).describe('Type of image to generate'),
+			entity_id: z.string().describe('ID of the entity (sake_id for bottle_art, tasting_id for group_transform or rank_portrait)'),
+			image_url: z.string().optional().describe('Source image URL (required for bottle_art and group_transform, not needed for rank_portrait)'),
+			rank_key: z.string().optional().describe('Rank key for rank_portrait (e.g., murabito, ronin, samurai)'),
+			taster_id: z.string().optional().describe('Taster ID for rank_portrait generation'),
+		}),
+		execute: async ({ type, entity_id, image_url, rank_key, taster_id }) => {
+			console.log('[Tool: generate_ai_image] Generating image:', type, 'for entity:', entity_id);
+			const supabase = createServiceClient();
+
+			if ((type === 'bottle_art' || type === 'group_transform') && !image_url) {
+				throw new Error(`image_url is required for ${type}`);
+			}
+
+			if (type === 'rank_portrait' && !taster_id) {
+				throw new Error('taster_id is required for rank_portrait');
+			}
+
+			try {
+				const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://sakesatur.day';
+				const requestBody: Record<string, string> = {
+					type: type === 'rank_portrait' ? 'profile_pic' : type,
+				};
+
+				if (type === 'bottle_art' || type === 'group_transform') {
+					requestBody.imageUrl = image_url!;
+					requestBody.tastingId = entity_id;
+				} else if (type === 'rank_portrait') {
+					requestBody.tasterId = taster_id!;
+					requestBody.rankKey = rank_key || 'murabito';
+				}
+
+				const response = await fetch(`${baseUrl}/api/images/generate`, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify(requestBody),
+				});
+
+				if (!response.ok) {
+					const errorText = await response.text();
+					console.error('[Tool: generate_ai_image] API error:', errorText);
+					throw new Error(`Failed to generate image: ${response.statusText}`);
+				}
+
+				const result = await response.json();
+				const generatedUrl = result.generatedImageUrl;
+
+				if (!generatedUrl) {
+					throw new Error('No generated image URL in response');
+				}
+
+				if (type === 'bottle_art') {
+					await supabase
+						.from('sakes')
+						.update({ ai_bottle_image_url: generatedUrl })
+						.eq('id', entity_id);
+				}
+
+				console.log('[Tool: generate_ai_image] Successfully generated image:', generatedUrl);
+				return {
+					success: true,
+					generated_image_url: generatedUrl,
+					type,
+					message: `AI ${type} generated successfully`,
+				};
+			} catch (error) {
+				console.error('[Tool: generate_ai_image] Error:', error);
+				throw new Error(`Failed to generate AI image: ${error instanceof Error ? error.message : String(error)}`);
+			}
 		},
 	}),
 	};

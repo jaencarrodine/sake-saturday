@@ -29,6 +29,7 @@ export type Database = {
           profile: string | null
           recommended_serving_temperatures: string | null
           bottling_company: string | null
+          image_url: string | null
           ai_bottle_image_url: string | null
           created_at: string
         }
@@ -46,6 +47,7 @@ export type Database = {
           profile?: string | null
           recommended_serving_temperatures?: string | null
           bottling_company?: string | null
+          image_url?: string | null
           ai_bottle_image_url?: string | null
           created_at?: string
         }
@@ -63,6 +65,7 @@ export type Database = {
           profile?: string | null
           recommended_serving_temperatures?: string | null
           bottling_company?: string | null
+          image_url?: string | null
           ai_bottle_image_url?: string | null
           created_at?: string
         }
@@ -145,6 +148,7 @@ export type Database = {
           location_coordinates: unknown | null
           front_image: string | null
           back_image: string | null
+          group_photo_url: string | null
           created_by: string | null
           summary: Json | null
           created_at: string
@@ -157,6 +161,7 @@ export type Database = {
           location_coordinates?: unknown | null
           front_image?: string | null
           back_image?: string | null
+          group_photo_url?: string | null
           created_by?: string | null
           summary?: Json | null
           created_at?: string
@@ -169,6 +174,7 @@ export type Database = {
           location_coordinates?: unknown | null
           front_image?: string | null
           back_image?: string | null
+          group_photo_url?: string | null
           created_by?: string | null
           summary?: Json | null
           created_at?: string
