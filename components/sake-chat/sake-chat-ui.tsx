@@ -200,6 +200,8 @@ export default function SakeChatUi() {
 										}
 
 										return (
+											// Using native img to support dynamic data URLs from chat uploads.
+											// eslint-disable-next-line @next/next/no-img-element
 											<img
 												key={`${part.url}-${index}`}
 												src={part.url}

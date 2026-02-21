@@ -47,7 +47,11 @@ export const POST = async (request: Request) => {
 		}
 
 		const modelMessages = await convertToModelMessages(
-			messages.map(({ id: _id, ...message }) => message),
+			messages.map((message) => {
+				const { id, ...rest } = message;
+				void id;
+				return rest;
+			}),
 		);
 
 		const result = streamText({
