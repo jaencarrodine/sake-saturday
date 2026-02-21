@@ -29,6 +29,7 @@ export type Database = {
           profile: string | null
           recommended_serving_temperatures: string | null
           bottling_company: string | null
+          ai_bottle_image_url: string | null
           created_at: string
         }
         Insert: {
@@ -45,6 +46,7 @@ export type Database = {
           profile?: string | null
           recommended_serving_temperatures?: string | null
           bottling_company?: string | null
+          ai_bottle_image_url?: string | null
           created_at?: string
         }
         Update: {
@@ -61,6 +63,7 @@ export type Database = {
           profile?: string | null
           recommended_serving_temperatures?: string | null
           bottling_company?: string | null
+          ai_bottle_image_url?: string | null
           created_at?: string
         }
         Relationships: []
@@ -72,6 +75,9 @@ export type Database = {
           phone_number: string | null
           phone_hash: string | null
           profile_pic: string | null
+          source_photo_url: string | null
+          ai_profile_image_url: string | null
+          rank_at_generation: string | null
           created_at: string
         }
         Insert: {
@@ -80,6 +86,9 @@ export type Database = {
           phone_number?: string | null
           phone_hash?: string | null
           profile_pic?: string | null
+          source_photo_url?: string | null
+          ai_profile_image_url?: string | null
+          rank_at_generation?: string | null
           created_at?: string
         }
         Update: {
@@ -88,6 +97,9 @@ export type Database = {
           phone_number?: string | null
           phone_hash?: string | null
           profile_pic?: string | null
+          source_photo_url?: string | null
+          ai_profile_image_url?: string | null
+          rank_at_generation?: string | null
           created_at?: string
         }
         Relationships: []
@@ -134,6 +146,7 @@ export type Database = {
           front_image: string | null
           back_image: string | null
           created_by: string | null
+          summary: Json | null
           created_at: string
         }
         Insert: {
@@ -145,6 +158,7 @@ export type Database = {
           front_image?: string | null
           back_image?: string | null
           created_by?: string | null
+          summary?: Json | null
           created_at?: string
         }
         Update: {
@@ -156,6 +170,7 @@ export type Database = {
           front_image?: string | null
           back_image?: string | null
           created_by?: string | null
+          summary?: Json | null
           created_at?: string
         }
         Relationships: [
