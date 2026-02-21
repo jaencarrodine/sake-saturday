@@ -93,19 +93,18 @@ export const createTools = (context: ToolContext) => {
 		if (!findError && existingSake) {
 			console.log('[Tool: identify_sake] Found existing sake:', existingSake.id);
 			if (image_url && !existingSake.image_url) {
-				const { data: updatedSake, error: updateError } = await supabase
+				const { data: updatedSakes, error: updateError } = await supabase
 					.from('sakes')
 					.update({ image_url })
 					.eq('id', existingSake.id)
-					.select()
-					.single();
+					.select();
 
 				if (updateError) {
 					console.error('[Tool: identify_sake] Error updating sake image:', updateError.message);
-				} else {
+				} else if (updatedSakes && updatedSakes.length > 0) {
 					return {
 						success: true,
-						sake: updatedSake,
+						sake: updatedSakes[0],
 						created: false,
 						message: 'Found existing sake and updated with image',
 					};
@@ -727,7 +726,7 @@ export const createTools = (context: ToolContext) => {
 
 	upload_image: tool({
 		description:
-			'Download an image from a URL (e.g., WhatsApp/Twilio media URL) and upload it to Supabase Storage. Returns the public URL for the uploaded image.',
+			'Download an image from a URL (e.g., WhatsApp/Twilio media URL) and upload it to Supabase Storage. Returns the public URL for the uploaded image. IMPORTANT: Always use the media URL from the CURRENT message (the most recent user message). Do NOT use media URLs from older messages in the conversation history as they may have expired.',
 		inputSchema: z.object({
 			media_url: z.string().describe('The URL of the image to download and upload'),
 			folder: z.string().optional().describe('Optional folder name in the sake-images bucket (default: "uploads")'),
@@ -938,17 +937,28 @@ export const createTools = (context: ToolContext) => {
 			console.log('[Tool: attach_sake_image] Attaching image to sake:', sake_id);
 			const supabase = createServiceClient();
 
-			const { data: updatedSake, error: updateError } = await supabase
+			const { data: updatedSakes, error: updateError } = await supabase
 				.from('sakes')
 				.update({ image_url })
 				.eq('id', sake_id)
-				.select()
-				.single();
+				.select();
 
 			if (updateError) {
 				console.error('[Tool: attach_sake_image] Error:', updateError.message);
 				throw new Error(`Failed to attach image to sake: ${updateError.message}`);
 			}
+
+			if (!updatedSakes || updatedSakes.length === 0) {
+				console.error('[Tool: attach_sake_image] No sake found with ID:', sake_id);
+				throw new Error(`Sake with ID ${sake_id} not found or update was blocked`);
+			}
+
+			if (updatedSakes.length > 1) {
+				console.error('[Tool: attach_sake_image] Multiple sakes updated, expected one:', updatedSakes.length);
+				throw new Error(`Expected to update one sake, but updated ${updatedSakes.length}`);
+			}
+
+			const updatedSake = updatedSakes[0];
 
 			console.log('[Tool: attach_sake_image] Successfully attached image');
 			return {
@@ -970,17 +980,28 @@ export const createTools = (context: ToolContext) => {
 			console.log('[Tool: attach_tasting_photo] Attaching photo to tasting:', tasting_id);
 			const supabase = createServiceClient();
 
-			const { data: updatedTasting, error: updateError } = await supabase
+			const { data: updatedTastings, error: updateError } = await supabase
 				.from('tastings')
 				.update({ group_photo_url: image_url })
 				.eq('id', tasting_id)
-				.select()
-				.single();
+				.select();
 
 			if (updateError) {
 				console.error('[Tool: attach_tasting_photo] Error:', updateError.message);
 				throw new Error(`Failed to attach photo to tasting: ${updateError.message}`);
 			}
+
+			if (!updatedTastings || updatedTastings.length === 0) {
+				console.error('[Tool: attach_tasting_photo] No tasting found with ID:', tasting_id);
+				throw new Error(`Tasting with ID ${tasting_id} not found or update was blocked`);
+			}
+
+			if (updatedTastings.length > 1) {
+				console.error('[Tool: attach_tasting_photo] Multiple tastings updated, expected one:', updatedTastings.length);
+				throw new Error(`Expected to update one tasting, but updated ${updatedTastings.length}`);
+			}
+
+			const updatedTasting = updatedTastings[0];
 
 			console.log('[Tool: attach_tasting_photo] Successfully attached photo');
 			return {
@@ -1097,18 +1118,27 @@ export const createAdminTools = () => {
 					.from('sakes')
 					.update(updates)
 					.eq('id', sake_id)
-					.select()
-					.single();
+					.select();
 				
 				if (error) {
 					console.error('[Tool: admin_edit_sake] Error:', error.message);
 					throw new Error(`Failed to update sake: ${error.message}`);
 				}
 				
+				if (!data || data.length === 0) {
+					console.error('[Tool: admin_edit_sake] No sake found with ID:', sake_id);
+					throw new Error(`Sake with ID ${sake_id} not found or update was blocked`);
+				}
+
+				if (data.length > 1) {
+					console.error('[Tool: admin_edit_sake] Multiple sakes updated, expected one:', data.length);
+					throw new Error(`Expected to update one sake, but updated ${data.length}`);
+				}
+				
 				console.log('[Tool: admin_edit_sake] Updated successfully');
 				return {
 					success: true,
-					sake: data,
+					sake: data[0],
 					message: 'Sake updated successfully',
 				};
 			},
@@ -1144,17 +1174,27 @@ export const createAdminTools = () => {
 						.update(tasterUpdates)
 						.eq('id', taster_id)
 						.select()
-						.single()
 					: await supabase
 						.from('tasters')
 						.select('*')
-						.eq('id', taster_id)
-						.single();
+						.eq('id', taster_id);
 
 				if (tasterUpdateError) {
 					console.error('[Tool: admin_edit_taster] Error:', tasterUpdateError.message);
 					throw new Error(`Failed to update taster: ${tasterUpdateError.message}`);
 				}
+
+				if (!updatedOrExistingTaster || updatedOrExistingTaster.length === 0) {
+					console.error('[Tool: admin_edit_taster] No taster found with ID:', taster_id);
+					throw new Error(`Taster with ID ${taster_id} not found or update was blocked`);
+				}
+
+				if (updatedOrExistingTaster.length > 1) {
+					console.error('[Tool: admin_edit_taster] Multiple tasters returned, expected one:', updatedOrExistingTaster.length);
+					throw new Error(`Expected one taster, but got ${updatedOrExistingTaster.length}`);
+				}
+
+				const tasterData = updatedOrExistingTaster[0];
 
 				if (phoneInput) {
 					await ensurePhoneLinkForTaster(supabase, taster_id, phoneInput);
@@ -1177,20 +1217,21 @@ export const createAdminTools = () => {
 					}
 				}
 
-				const { data: refreshedTaster, error: refreshError } = await supabase
+				const { data: refreshedTasters, error: refreshError } = await supabase
 					.from('tasters')
 					.select('*')
-					.eq('id', taster_id)
-					.single();
+					.eq('id', taster_id);
 
 				if (refreshError) {
 					throw new Error(`Failed to refresh updated taster: ${refreshError.message}`);
 				}
 
+				const refreshedTaster = refreshedTasters && refreshedTasters.length > 0 ? refreshedTasters[0] : null;
+
 				console.log('[Tool: admin_edit_taster] Updated successfully');
 				return {
 					success: true,
-					taster: refreshedTaster || updatedOrExistingTaster,
+					taster: refreshedTaster || tasterData,
 					message: 'Taster updated successfully',
 				};
 			},
@@ -1214,18 +1255,27 @@ export const createAdminTools = () => {
 					.from('tastings')
 					.update(updates)
 					.eq('id', tasting_id)
-					.select()
-					.single();
+					.select();
 				
 				if (error) {
 					console.error('[Tool: admin_edit_tasting] Error:', error.message);
 					throw new Error(`Failed to update tasting: ${error.message}`);
 				}
 				
+				if (!data || data.length === 0) {
+					console.error('[Tool: admin_edit_tasting] No tasting found with ID:', tasting_id);
+					throw new Error(`Tasting with ID ${tasting_id} not found or update was blocked`);
+				}
+
+				if (data.length > 1) {
+					console.error('[Tool: admin_edit_tasting] Multiple tastings updated, expected one:', data.length);
+					throw new Error(`Expected to update one tasting, but updated ${data.length}`);
+				}
+				
 				console.log('[Tool: admin_edit_tasting] Updated successfully');
 				return {
 					success: true,
-					tasting: data,
+					tasting: data[0],
 					message: 'Tasting updated successfully',
 				};
 			},

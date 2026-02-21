@@ -550,6 +550,11 @@ const getConversationContext = async (
 	}
 };
 
+const replaceTwilioMediaUrls = (text: string): string => {
+	const twilioMediaUrlPattern = /https?:\/\/[^\s]*api\.twilio\.com[^\s]*/gi;
+	return text.replace(twilioMediaUrlPattern, '[image previously shared]');
+};
+
 const buildMessages = async (
 	history: WhatsAppMessage[],
 	currentBody: string | null,
@@ -575,9 +580,10 @@ const buildMessages = async (
 				const content: Array<{ type: 'text'; text: string } | { type: 'image'; image: string | Uint8Array }> = [];
 
 				if (msg.body) {
+					const sanitizedBody = replaceTwilioMediaUrls(msg.body);
 					content.push({
 						type: 'text',
-						text: msg.body,
+						text: sanitizedBody,
 					});
 				}
 
@@ -606,9 +612,10 @@ const buildMessages = async (
 				}
 			} else {
 				if (msg.body) {
+					const sanitizedBody = replaceTwilioMediaUrls(msg.body);
 					messages.push({
 						role: 'assistant' as const,
-						content: msg.body,
+						content: sanitizedBody,
 					});
 				}
 			}
