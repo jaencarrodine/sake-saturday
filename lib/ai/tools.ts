@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { tool } from 'ai';
 import { createServiceClient } from '@/lib/supabase/server';
+import { SAKE_IMAGES_BUCKET } from '@/lib/supabase/storage';
 import { ensurePhoneLinkForTaster, hashPhoneNumber, resolveTasterByPhone } from '@/lib/phoneHash';
 import { getRank, getNextRank } from '@/lib/tasterRanks';
 import type { Database } from '@/types/supabase/databaseTypes';
@@ -902,7 +903,7 @@ export const createTools = (context: ToolContext) => {
 				const fileName = `${folderName}/${timestamp}-${randomStr}.jpg`;
 
 				const { data: uploadData, error: uploadError } = await supabase.storage
-					.from('sake-images')
+					.from(SAKE_IMAGES_BUCKET)
 					.upload(fileName, blob, {
 						contentType: blob.type || 'image/jpeg',
 						cacheControl: '3600',
@@ -915,7 +916,7 @@ export const createTools = (context: ToolContext) => {
 
 				const {
 					data: { publicUrl },
-				} = supabase.storage.from('sake-images').getPublicUrl(uploadData.path);
+				} = supabase.storage.from(SAKE_IMAGES_BUCKET).getPublicUrl(uploadData.path);
 
 				console.log('[Tool: upload_image] Successfully uploaded to:', publicUrl, 'from source:', resolvedDownloadUrl);
 				return {
