@@ -1035,7 +1035,7 @@ export const createTools = (context: ToolContext) => {
 			}
 
 			try {
-				const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://sakesatur.day';
+				const baseUrl = process.env.NEXT_PUBLIC_URL || 'http://localhost:3000';
 				const requestBody: Record<string, string> = {
 					type: type === 'rank_portrait' ? 'profile_pic' : type,
 				};
