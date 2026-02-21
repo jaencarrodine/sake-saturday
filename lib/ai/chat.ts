@@ -203,7 +203,7 @@ export const processMessage = async (
 		system: systemPrompt,
 		messages,
 		tools: allTools,
-		stopWhen: stepCountIs(5),
+		stopWhen: stepCountIs(10),
 	});
 
 		console.log(JSON.stringify({
