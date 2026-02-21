@@ -115,4 +115,4 @@ Admin tools available:
 - admin_list_records: List records from any table with optional filters`;
 
 export const MAX_MESSAGE_HISTORY = 20;
-export const CLAUDE_MODEL = 'claude-sonnet-4-20250514';
+export const CLAUDE_MODEL = 'claude-sonnet-4-6';
