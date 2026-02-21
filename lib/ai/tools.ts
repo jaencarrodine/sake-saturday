@@ -1,11 +1,51 @@
 import { z } from 'zod';
+import { tool } from 'ai';
 import { createServiceClient } from '@/lib/supabase/server';
 import type { Database } from '@/types/supabase/databaseTypes';
+import type { Twilio } from 'twilio';
 
 type Taster = Database['public']['Tables']['tasters']['Row'];
 
-export const sakeTools = {
-	identify_sake: {
+type ToolContext = {
+	twilioClient: Twilio;
+	fromNumber: string;
+	toNumber: string;
+};
+
+export const createTools = (context: ToolContext) => {
+	const { twilioClient, fromNumber, toNumber } = context;
+
+	return {
+		send_message: tool({
+			description: 'Send an intermediate message to the user in the WhatsApp chat. Use this to acknowledge receipt, provide status updates, or share information before continuing processing. Do NOT use this for your final response.',
+			inputSchema: z.object({
+				message: z.string().describe('The message to send to the user'),
+			}),
+			execute: async ({ message }) => {
+				console.log('[Tool: send_message] Sending intermediate message:', message.substring(0, 100));
+				try {
+					const formattedFrom = fromNumber.startsWith('whatsapp:') ? fromNumber : `whatsapp:${fromNumber}`;
+					const formattedTo = toNumber.startsWith('whatsapp:') ? toNumber : `whatsapp:${toNumber}`;
+					
+					const twilioMessage = await twilioClient.messages.create({
+						from: formattedFrom,
+						to: formattedTo,
+						body: message,
+					});
+					
+					console.log('[Tool: send_message] Message sent successfully:', twilioMessage.sid);
+					return {
+						success: true,
+						message_sid: twilioMessage.sid,
+						message: 'Message sent to user',
+					};
+				} catch (error) {
+					console.error('[Tool: send_message] Error sending message:', error);
+					throw new Error(`Failed to send message: ${error instanceof Error ? error.message : String(error)}`);
+				}
+			},
+		}),
+	identify_sake: tool({
 		description:
 			'Search for an existing sake in the database or create a new one. Use this when the user sends a photo or description of a sake bottle.',
 		inputSchema: z.object({
@@ -79,9 +119,9 @@ export const sakeTools = {
 			message: 'Created new sake in database',
 		};
 	},
-	},
+	}),
 
-	create_tasting: {
+	create_tasting: tool({
 		description:
 			'Create a new tasting session for a sake. Use this after identifying a sake and when the user is ready to start tasting.',
 		inputSchema: z.object({
@@ -137,9 +177,9 @@ export const sakeTools = {
 			message: `Created new tasting session. View at: ${tastingUrl}`,
 		};
 	},
-	},
+	}),
 
-	record_scores: {
+	record_scores: tool({
 		description:
 			'Record scores from tasters for a specific tasting. Scores are on a 0-10 scale. Can record multiple tasters at once.',
 		inputSchema: z.object({
@@ -207,9 +247,9 @@ export const sakeTools = {
 			message: `Recorded ${processedScores.length} score(s)`,
 		};
 	},
-	},
+	}),
 
-	lookup_taster: {
+	lookup_taster: tool({
 		description:
 			'Find an existing taster by name or phone number, or create a new one.',
 		inputSchema: z.object({
@@ -227,9 +267,9 @@ export const sakeTools = {
 		console.log('[Tool: lookup_taster] Result:', result.created ? 'Created new taster' : 'Found existing taster', result.taster.id);
 		return result;
 	},
-	},
+	}),
 
-	get_tasting_history: {
+	get_tasting_history: tool({
 		description:
 			'Get past tasting sessions, optionally filtered by sake, taster, or date range.',
 		inputSchema: z.object({
@@ -285,9 +325,9 @@ export const sakeTools = {
 			count: data?.length || 0,
 		};
 	},
-	},
+	}),
 
-	get_sake_rankings: {
+	get_sake_rankings: tool({
 		description:
 			'Get the current sake leaderboard with average scores and number of tastings.',
 		inputSchema: z.object({
@@ -323,7 +363,191 @@ export const sakeTools = {
 			count: data?.length || 0,
 		};
 	},
-	},
+	}),
+	};
+};
+
+export const createAdminTools = () => {
+	return {
+		admin_edit_sake: tool({
+			description: 'Update any field on a sake record by ID. Admin only.',
+			inputSchema: z.object({
+				sake_id: z.string().describe('ID of the sake to update'),
+				updates: z.object({
+					name: z.string().optional(),
+					prefecture: z.string().optional(),
+					grade: z.string().optional(),
+					type: z.string().optional(),
+					rice: z.string().optional(),
+					polishing_ratio: z.number().optional(),
+					alc_percentage: z.number().optional(),
+					smv: z.number().optional(),
+					bottling_company: z.string().optional(),
+				}).describe('Fields to update'),
+			}),
+			execute: async ({ sake_id, updates }) => {
+				console.log('[Tool: admin_edit_sake] Updating sake:', sake_id, updates);
+				const supabase = createServiceClient();
+				
+				const { data, error } = await supabase
+					.from('sakes')
+					.update(updates)
+					.eq('id', sake_id)
+					.select()
+					.single();
+				
+				if (error) {
+					console.error('[Tool: admin_edit_sake] Error:', error.message);
+					throw new Error(`Failed to update sake: ${error.message}`);
+				}
+				
+				console.log('[Tool: admin_edit_sake] Updated successfully');
+				return {
+					success: true,
+					sake: data,
+					message: 'Sake updated successfully',
+				};
+			},
+		}),
+		
+		admin_edit_taster: tool({
+			description: 'Update any taster field (name, profile_pic, etc.). Admin only.',
+			inputSchema: z.object({
+				taster_id: z.string().describe('ID of the taster to update'),
+				updates: z.object({
+					name: z.string().optional(),
+					phone_number: z.string().optional(),
+					profile_pic: z.string().optional(),
+					rank_override: z.string().optional(),
+				}).describe('Fields to update'),
+			}),
+			execute: async ({ taster_id, updates }) => {
+				console.log('[Tool: admin_edit_taster] Updating taster:', taster_id, updates);
+				const supabase = createServiceClient();
+				
+				const { data, error } = await supabase
+					.from('tasters')
+					.update(updates)
+					.eq('id', taster_id)
+					.select()
+					.single();
+				
+				if (error) {
+					console.error('[Tool: admin_edit_taster] Error:', error.message);
+					throw new Error(`Failed to update taster: ${error.message}`);
+				}
+				
+				console.log('[Tool: admin_edit_taster] Updated successfully');
+				return {
+					success: true,
+					taster: data,
+					message: 'Taster updated successfully',
+				};
+			},
+		}),
+		
+		admin_edit_tasting: tool({
+			description: 'Modify tasting details or scores. Admin only.',
+			inputSchema: z.object({
+				tasting_id: z.string().describe('ID of the tasting to update'),
+				updates: z.object({
+					date: z.string().optional(),
+					location_name: z.string().optional(),
+					sake_id: z.string().optional(),
+				}).describe('Fields to update'),
+			}),
+			execute: async ({ tasting_id, updates }) => {
+				console.log('[Tool: admin_edit_tasting] Updating tasting:', tasting_id, updates);
+				const supabase = createServiceClient();
+				
+				const { data, error } = await supabase
+					.from('tastings')
+					.update(updates)
+					.eq('id', tasting_id)
+					.select()
+					.single();
+				
+				if (error) {
+					console.error('[Tool: admin_edit_tasting] Error:', error.message);
+					throw new Error(`Failed to update tasting: ${error.message}`);
+				}
+				
+				console.log('[Tool: admin_edit_tasting] Updated successfully');
+				return {
+					success: true,
+					tasting: data,
+					message: 'Tasting updated successfully',
+				};
+			},
+		}),
+		
+		admin_delete_record: tool({
+			description: 'Delete any record from sakes, tasters, tastings, or scores tables. Admin only.',
+			inputSchema: z.object({
+				table: z.enum(['sakes', 'tasters', 'tastings', 'scores']).describe('Table to delete from'),
+				record_id: z.string().describe('ID of the record to delete'),
+			}),
+			execute: async ({ table, record_id }) => {
+				console.log('[Tool: admin_delete_record] Deleting from', table, ':', record_id);
+				const supabase = createServiceClient();
+				
+				const { error } = await supabase
+					.from(table)
+					.delete()
+					.eq('id', record_id);
+				
+				if (error) {
+					console.error('[Tool: admin_delete_record] Error:', error.message);
+					throw new Error(`Failed to delete record: ${error.message}`);
+				}
+				
+				console.log('[Tool: admin_delete_record] Deleted successfully');
+				return {
+					success: true,
+					message: `Deleted record from ${table}`,
+				};
+			},
+		}),
+		
+		admin_list_records: tool({
+			description: 'List records from any table with optional filters. Admin only.',
+			inputSchema: z.object({
+				table: z.enum(['sakes', 'tasters', 'tastings', 'scores']).describe('Table to query'),
+				limit: z.number().optional().describe('Maximum number of records (default 20)'),
+				filters: z.record(z.string(), z.any()).optional().describe('Optional filters as key-value pairs'),
+			}),
+			execute: async ({ table, limit, filters }) => {
+				console.log('[Tool: admin_list_records] Listing from', table, 'limit:', limit, 'filters:', filters);
+				const supabase = createServiceClient();
+				const queryLimit = limit || 20;
+				
+				let query = supabase
+					.from(table)
+					.select('*')
+					.limit(queryLimit);
+				
+				if (filters) {
+					for (const [key, value] of Object.entries(filters)) {
+						query = query.eq(key, value);
+					}
+				}
+				
+				const { data, error } = await query;
+				
+				if (error) {
+					console.error('[Tool: admin_list_records] Error:', error.message);
+					throw new Error(`Failed to list records: ${error.message}`);
+				}
+				
+				console.log('[Tool: admin_list_records] Listed', data?.length || 0, 'records');
+				return {
+					success: true,
+					records: data,
+					count: data?.length || 0,
+				};
+			},
+		}),
+	};
 };
 
 const lookupTasterHelper = async (
