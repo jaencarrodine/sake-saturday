@@ -46,6 +46,9 @@ type GenerateTextResult = {
 	}>;
 };
 
+// NOTE: Twilio WhatsApp API does not support typing indicators.
+// If we switch to WhatsApp Cloud API directly, we can send typing indicators via:
+// POST /v1/messages { messaging_product: "whatsapp", recipient_type: "individual", to: phone, type: "typing" }
 export const processMessage = async (
 	phoneNumber: string,
 	toNumber: string,
