@@ -732,9 +732,29 @@ export const createTools = (context: ToolContext) => {
 			const folderName = folder || 'uploads';
 
 			try {
-				const response = await fetch(media_url);
+				const isTwilioUrl = media_url.includes('twilio.com');
+				let response: Response;
+
+				if (isTwilioUrl) {
+					const accountSid = process.env.TWILIO_ACCOUNT_SID;
+					const authToken = process.env.TWILIO_AUTH_TOKEN;
+
+					if (!accountSid || !authToken) {
+						throw new Error('Missing Twilio credentials (TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN)');
+					}
+
+					const basicAuth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
+					response = await fetch(media_url, {
+						headers: {
+							Authorization: `Basic ${basicAuth}`,
+						},
+					});
+				} else {
+					response = await fetch(media_url);
+				}
+
 				if (!response.ok) {
-					throw new Error(`Failed to download image: ${response.statusText}`);
+					throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
 				}
 
 				const blob = await response.blob();
