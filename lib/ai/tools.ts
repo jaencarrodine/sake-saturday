@@ -753,9 +753,15 @@ export const createTools = (context: ToolContext) => {
 					response = await fetch(media_url);
 				}
 
-				if (!response.ok) {
-					throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
-				}
+			if (!response.ok) {
+				const responseBody = await response.text().catch(() => 'Unable to read response body');
+				console.error('[Tool: upload_image] Download failed:', {
+					status: response.status,
+					statusText: response.statusText,
+					body: responseBody,
+				});
+				throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
+			}
 
 				const blob = await response.blob();
 				const timestamp = Date.now();
