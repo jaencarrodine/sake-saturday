@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 type ImageType = "bottle_art" | "group_transform" | "profile_pic" | "rank_portrait";
 
 const GEMINI_API_ENDPOINT =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent";
 
 const BASE_STYLE_PREFIX = `Pixel art, cyberpunk Edo period fusion, neon glow on traditional Japanese elements, dark background with digital rain and glitch effects, 8-bit meets vaporwave, cherry blossom glitch particles, neon kanji accents, cyan and magenta color palette`;
 
