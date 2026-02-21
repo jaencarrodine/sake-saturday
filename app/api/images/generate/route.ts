@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { SAKE_IMAGES_BUCKET } from "@/lib/supabase/storage";
 
 type ImageType = "bottle_art" | "group_transform" | "profile_pic" | "rank_portrait";
 type GeminiResponsePart = {
@@ -428,7 +429,7 @@ export async function POST(request: Request) {
     try {
       supabase = await createClient();
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("tasting-images")
+        .from(SAKE_IMAGES_BUCKET)
         .upload(fileName, blob, {
           contentType: generatedImageMimeType,
           cacheControl: "3600",
@@ -444,7 +445,7 @@ export async function POST(request: Request) {
 
       const {
         data: { publicUrl: generatedPublicUrl },
-      } = supabase.storage.from("tasting-images").getPublicUrl(uploadData.path);
+      } = supabase.storage.from(SAKE_IMAGES_BUCKET).getPublicUrl(uploadData.path);
       publicUrl = generatedPublicUrl;
     } catch (error) {
       console.error("Storage upload exception:", {

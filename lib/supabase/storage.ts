@@ -1,6 +1,8 @@
 import { createClient } from "./server";
 
-export const TASTING_IMAGES_BUCKET = "tasting-images";
+export const SAKE_IMAGES_BUCKET =
+  process.env.SUPABASE_STORAGE_BUCKET || "sake-images";
+export const TASTING_IMAGES_BUCKET = SAKE_IMAGES_BUCKET;
 
 export async function uploadImageToStorage(
   file: File | Blob,
@@ -10,7 +12,7 @@ export async function uploadImageToStorage(
     const supabase = await createClient();
 
     const { data, error } = await supabase.storage
-      .from(TASTING_IMAGES_BUCKET)
+      .from(SAKE_IMAGES_BUCKET)
       .upload(path, file, {
         cacheControl: "3600",
         upsert: false,
@@ -23,7 +25,7 @@ export async function uploadImageToStorage(
 
     const {
       data: { publicUrl },
-    } = supabase.storage.from(TASTING_IMAGES_BUCKET).getPublicUrl(data.path);
+    } = supabase.storage.from(SAKE_IMAGES_BUCKET).getPublicUrl(data.path);
 
     return { url: publicUrl, error: null };
   } catch (error) {
@@ -64,7 +66,7 @@ export async function deleteImageFromStorage(
     const supabase = await createClient();
 
     const { error } = await supabase.storage
-      .from(TASTING_IMAGES_BUCKET)
+      .from(SAKE_IMAGES_BUCKET)
       .remove([path]);
 
     if (error) {
@@ -84,5 +86,5 @@ export async function deleteImageFromStorage(
 
 export function getPublicUrl(path: string): string {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  return `${supabaseUrl}/storage/v1/object/public/${TASTING_IMAGES_BUCKET}/${path}`;
+  return `${supabaseUrl}/storage/v1/object/public/${SAKE_IMAGES_BUCKET}/${path}`;
 }

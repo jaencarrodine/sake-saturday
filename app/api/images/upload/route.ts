@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { withApiAuth } from '@/lib/api/auth';
+import { SAKE_IMAGES_BUCKET } from '@/lib/supabase/storage';
 
 // POST /api/images/upload - Upload image to Supabase Storage
 const postHandler = async (req: NextRequest) => {
@@ -48,7 +49,7 @@ const postHandler = async (req: NextRequest) => {
 
 		// Upload to Supabase Storage
 		const { data, error } = await supabase.storage
-			.from('sake-images')
+			.from(SAKE_IMAGES_BUCKET)
 			.upload(fileName, buffer, {
 				contentType: file.type,
 				cacheControl: '3600',
@@ -65,7 +66,7 @@ const postHandler = async (req: NextRequest) => {
 
 		// Get public URL
 		const { data: publicUrlData } = supabase.storage
-			.from('sake-images')
+			.from(SAKE_IMAGES_BUCKET)
 			.getPublicUrl(fileName);
 
 		return NextResponse.json({
