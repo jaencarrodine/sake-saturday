@@ -112,9 +112,14 @@ const getGeneratedImageFromGemini = (
 
       if (!inlineData || typeof inlineData.data !== "string") continue;
 
+      const mimeTypeFromSnakeCase =
+        "mime_type" in inlineData && typeof inlineData.mime_type === "string"
+          ? inlineData.mime_type
+          : undefined;
+
       const mimeTypeFromInlineData =
         inlineData.mimeType ||
-        (typeof inlineData.mime_type === "string" ? inlineData.mime_type : undefined) ||
+        mimeTypeFromSnakeCase ||
         "image/jpeg";
 
       const cleanedData = inlineData.data.replace(/^data:[^;]+;base64,/, "");
