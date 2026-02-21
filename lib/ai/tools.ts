@@ -561,6 +561,61 @@ export const createTools = (context: ToolContext) => {
 			};
 		},
 	}),
+
+	research_sake: tool({
+		description:
+			'Research and retrieve details about a sake. Use this when you need to find information about a sake\'s brewery, prefecture, grade, rice variety, polishing ratio, ABV, SMV, or flavor profile. After calling this tool, use the information returned to auto-fill sake details when creating or updating a sake record. You should then present the researched information to the user for confirmation.',
+		inputSchema: z.object({
+			sake_name: z.string().describe('Name of the sake to research'),
+			known_details: z.object({
+				prefecture: z.string().optional(),
+				grade: z.string().optional(),
+				bottling_company: z.string().optional(),
+			}).optional().describe('Any details already known about the sake (helps narrow down search)'),
+		}),
+		execute: async ({ sake_name, known_details }) => {
+			console.log('[Tool: research_sake] Researching sake:', sake_name, 'with known details:', known_details);
+			const supabase = createServiceClient();
+
+			const { data: existingSakes, error: searchError } = await supabase
+				.from('sakes')
+				.select('*')
+				.ilike('name', `%${sake_name}%`)
+				.limit(3);
+
+			if (searchError) {
+				console.error('[Tool: research_sake] Error searching database:', searchError.message);
+			}
+
+			const databaseResults = existingSakes && existingSakes.length > 0
+				? existingSakes.map(sake => ({
+					id: sake.id,
+					name: sake.name,
+					prefecture: sake.prefecture,
+					grade: sake.grade,
+					type: sake.type,
+					rice: sake.rice,
+					polishing_ratio: sake.polishing_ratio,
+					alc_percentage: sake.alc_percentage,
+					smv: sake.smv,
+					bottling_company: sake.bottling_company,
+				}))
+				: [];
+
+			console.log('[Tool: research_sake] Found', databaseResults.length, 'existing sakes in database');
+
+			return {
+				success: true,
+				sake_name,
+				known_details: known_details || {},
+				database_matches: databaseResults,
+				database_match_count: databaseResults.length,
+				next_step: databaseResults.length > 0
+					? 'Found existing sake(s) in database. Review the matches and ask the user if any match what they are looking for.'
+					: 'No exact matches found in database. Use your knowledge of Japanese sake to provide details about this sake. Look up information about the brewery, prefecture, grade, rice variety, polishing ratio, ABV, SMV, and typical flavor profile. Present the information to the user for confirmation before creating a new sake record.',
+			};
+		},
+	}),
 	};
 };
 
