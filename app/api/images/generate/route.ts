@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/server";
 import { SAKE_IMAGES_BUCKET } from "@/lib/supabase/storage";
 
 type ImageType = "bottle_art" | "group_transform" | "profile_pic" | "rank_portrait";
@@ -74,14 +74,14 @@ const getRandomVariations = (count: number = 3): string => {
 };
 
 const PROMPTS = {
-  bottle_art: `${BASE_STYLE_PREFIX}, sake bottle portrait, dramatic lighting, the bottle rendered as a glowing artifact with neon label, circuit-pattern condensation, cyberpunk bar counter setting, ${getRandomVariations()}`,
+  bottle_art: `${BASE_STYLE_PREFIX}, sake bottle portrait, dramatic lighting, the bottle rendered as a glowing artifact with neon label, circuit-pattern condensation, cyberpunk bar counter setting, ${getRandomVariations()}. Portrait orientation, 3:4 aspect ratio, vertical composition`,
 
-  group_transform: `${BASE_STYLE_PREFIX}, group portrait reimagined as cyberpunk Edo warriors, each person in rank-appropriate cyber-armor, neon dojo or izakaya setting, sake cups glowing with neon liquid, team portrait composition, ${getRandomVariations()}`,
+  group_transform: `${BASE_STYLE_PREFIX}, group portrait reimagined as cyberpunk Edo warriors, each person in rank-appropriate cyber-armor, neon dojo or izakaya setting, sake cups glowing with neon liquid, team portrait composition, ${getRandomVariations()}. Landscape orientation, 16:9 aspect ratio, wide composition`,
 };
 
 const getProfilePicPrompt = (rankKey: string): string => {
   const rankScene = RANK_SCENES[rankKey] || RANK_SCENES.murabito;
-  return `${BASE_STYLE_PREFIX}, ${rankScene}, ${getRandomVariations()}`;
+  return `${BASE_STYLE_PREFIX}, ${rankScene}, ${getRandomVariations()}. Portrait orientation, 3:4 aspect ratio, vertical composition, centered character`;
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -424,47 +424,26 @@ export async function POST(request: Request) {
     const fileName = `${imageType}-${timestamp}-${randomStr}.${extension}`;
 
     const blob = await fetch(base64Image).then((r) => r.blob());
-    let publicUrl: string;
-    let supabase = null as Awaited<ReturnType<typeof createClient>> | null;
-    try {
-      supabase = await createClient();
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from(SAKE_IMAGES_BUCKET)
-        .upload(fileName, blob, {
-          contentType: generatedImageMimeType,
-          cacheControl: "3600",
-        });
-
-      if (uploadError || !uploadData) {
-        console.error("Storage upload error:", uploadError);
-        return NextResponse.json({
-          generatedImageUrl: base64Image,
-          warning: "Could not upload to storage, returning base64",
-        });
-      }
-
-      const {
-        data: { publicUrl: generatedPublicUrl },
-      } = supabase.storage.from(SAKE_IMAGES_BUCKET).getPublicUrl(uploadData.path);
-      publicUrl = generatedPublicUrl;
-    } catch (error) {
-      console.error("Storage upload exception:", {
-        error: getErrorMessage(error),
-        errorCode: getFetchErrorCode(error),
+    const supabase = createServiceClient();
+    
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from(SAKE_IMAGES_BUCKET)
+      .upload(fileName, blob, {
+        contentType: generatedImageMimeType,
+        cacheControl: "3600",
       });
-      return NextResponse.json({
-        generatedImageUrl: base64Image,
-        warning:
-          "Image generated but Supabase storage is unreachable. Returning base64 image instead.",
-      });
+
+    if (uploadError || !uploadData) {
+      console.error("Storage upload error:", uploadError);
+      return NextResponse.json(
+        { error: "Failed to upload image to storage", details: uploadError },
+        { status: 500 }
+      );
     }
 
-    if (!supabase) {
-      return NextResponse.json({
-        generatedImageUrl: base64Image,
-        warning: "Image generated but storage client was not initialized.",
-      });
-    }
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from(SAKE_IMAGES_BUCKET).getPublicUrl(uploadData.path);
 
     try {
       if ((imageType === "profile_pic" || imageType === "rank_portrait") && tasterId) {
