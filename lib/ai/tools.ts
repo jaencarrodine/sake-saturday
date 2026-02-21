@@ -3,6 +3,7 @@ import { tool } from 'ai';
 import { createServiceClient } from '@/lib/supabase/server';
 import { SAKE_IMAGES_BUCKET } from '@/lib/supabase/storage';
 import { ensurePhoneLinkForTaster, hashPhoneNumber, resolveTasterByPhone } from '@/lib/phoneHash';
+import { normalizeImageBuffer } from '@/lib/images/normalize-image';
 import { getRank, getNextRank } from '@/lib/tasterRanks';
 import type { Database } from '@/types/supabase/databaseTypes';
 import type { Twilio } from 'twilio';
@@ -191,14 +192,22 @@ export const createTools = (context: ToolContext) => {
 		}
 
 		const blob = await response.blob();
+		const originalBuffer = Buffer.from(await blob.arrayBuffer());
+		const normalizedImage = await normalizeImageBuffer({
+			buffer: originalBuffer,
+			contentType: blob.type,
+			fileNameOrUrl: resolvedDownloadUrl,
+		});
+		if (normalizedImage.wasHeicConverted)
+			console.log(`[Tool: ${toolLabel}] Converted HEIC/HEIF source image to JPEG`);
 		const timestamp = Date.now();
 		const randomStr = Math.random().toString(36).substring(2, 15);
-		const fileName = `${folderName}/${timestamp}-${randomStr}.jpg`;
+		const fileName = `${folderName}/${timestamp}-${randomStr}.${normalizedImage.extension}`;
 
 		const { data: uploadData, error: uploadError } = await supabase.storage
 			.from(SAKE_IMAGES_BUCKET)
-			.upload(fileName, blob, {
-				contentType: blob.type || 'image/jpeg',
+			.upload(fileName, normalizedImage.buffer, {
+				contentType: normalizedImage.contentType || 'image/jpeg',
 				cacheControl: '3600',
 			});
 

@@ -1,3 +1,5 @@
+import { normalizeImageBuffer } from '@/lib/images/normalize-image';
+
 export const downloadTwilioMedia = async (
 	mediaUrl: string
 ): Promise<{ type: 'image'; image: string } | null> => {
@@ -23,9 +25,14 @@ export const downloadTwilioMedia = async (
 			return null;
 		}
 
-		const buffer = await response.arrayBuffer();
-		const base64 = Buffer.from(buffer).toString('base64');
-		const contentType = response.headers.get('content-type') || '';
+		const rawBuffer = Buffer.from(await response.arrayBuffer());
+		const normalizedImage = await normalizeImageBuffer({
+			buffer: rawBuffer,
+			contentType: response.headers.get('content-type'),
+			fileNameOrUrl: mediaUrl,
+		});
+		const base64 = normalizedImage.buffer.toString('base64');
+		const contentType = normalizedImage.contentType || response.headers.get('content-type') || 'image/jpeg';
 		
 		const dataUrl = `data:${contentType};base64,${base64}`;
 
