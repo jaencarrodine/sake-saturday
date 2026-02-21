@@ -84,6 +84,22 @@ export default function Home() {
 				</GridArea>
 			</div>
 
+			<div className="mb-6">
+				<GridArea title="SAKE SENSEI CHAT" titleJa="酒先生">
+					<div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+						<p className="text-sm text-muted">
+							Chat with AI directly in the app and upload sake bottle photos for live analysis.
+						</p>
+						<Link
+							href="/chat"
+							className="inline-flex items-center justify-center border border-neon-cyan px-3 py-2 text-sm text-neon-cyan transition-colors hover:bg-neon-cyan hover:bg-opacity-10"
+						>
+							OPEN AI CHAT →
+						</Link>
+					</div>
+				</GridArea>
+			</div>
+
 			{/* Main Content - 2 Column Layout */}
 			<div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mb-6">
 				{/* Sake Rankings - Left Column (7/12) */}
