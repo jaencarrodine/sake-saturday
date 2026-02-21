@@ -732,7 +732,7 @@ export const createTools = (context: ToolContext) => {
 			const folderName = folder || 'uploads';
 
 			try {
-				const isTwilioUrl = media_url.includes('twilio.com');
+				const isTwilioUrl = media_url.includes('api.twilio.com');
 				let response: Response;
 
 				if (isTwilioUrl) {
@@ -743,25 +743,77 @@ export const createTools = (context: ToolContext) => {
 						throw new Error('Missing Twilio credentials (TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN)');
 					}
 
+					console.log('[Tool: upload_image] Detected Twilio URL, using HTTP Basic Auth');
+
 					const basicAuth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
 					response = await fetch(media_url, {
 						headers: {
 							Authorization: `Basic ${basicAuth}`,
+							Accept: '*/*',
 						},
 					});
 				} else {
+					console.log('[Tool: upload_image] Non-Twilio URL, fetching directly');
 					response = await fetch(media_url);
 				}
 
-			if (!response.ok) {
-				const responseBody = await response.text().catch(() => 'Unable to read response body');
-				console.error('[Tool: upload_image] Download failed:', {
-					status: response.status,
-					statusText: response.statusText,
-					body: responseBody,
-				});
-				throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
-			}
+				console.log('[Tool: upload_image] Response status:', response.status, 'Content-Type:', response.headers.get('content-type'));
+
+				if (!response.ok) {
+					const responseBody = await response.text().catch(() => 'Unable to read response body');
+					console.error('[Tool: upload_image] Download failed:', {
+						url: media_url,
+						status: response.status,
+						statusText: response.statusText,
+						contentType: response.headers.get('content-type'),
+						body: responseBody.substring(0, 500),
+					});
+					
+					if (isTwilioUrl && response.status === 404) {
+						const urlMatch = media_url.match(/\/Messages\/(MM[^\/]+)\/Media\/(ME[^\/]+)/);
+						if (urlMatch) {
+							const [, messageSid, mediaSid] = urlMatch;
+							console.log('[Tool: upload_image] Attempting to fetch media via Twilio SDK as fallback');
+							console.log('[Tool: upload_image] MessageSid:', messageSid, 'MediaSid:', mediaSid);
+							
+							try {
+								const mediaInstance = await twilioClient
+									.messages(messageSid)
+									.media(mediaSid)
+									.fetch();
+								
+								console.log('[Tool: upload_image] Media fetched via SDK, uri:', mediaInstance.uri);
+								
+								const mediaContentUrl = `https://api.twilio.com${mediaInstance.uri}`.replace('.json', '');
+								console.log('[Tool: upload_image] Trying media content URL:', mediaContentUrl);
+								
+								const accountSid = process.env.TWILIO_ACCOUNT_SID;
+								const authToken = process.env.TWILIO_AUTH_TOKEN;
+								const basicAuth = Buffer.from(`${accountSid}:${authToken}`).toString('base64');
+								
+								response = await fetch(mediaContentUrl, {
+									headers: {
+										Authorization: `Basic ${basicAuth}`,
+										Accept: '*/*',
+									},
+								});
+								
+								console.log('[Tool: upload_image] SDK fallback response status:', response.status);
+								
+								if (!response.ok) {
+									throw new Error(`SDK fallback also failed: ${response.status} ${response.statusText}`);
+								}
+							} catch (sdkError) {
+								console.error('[Tool: upload_image] SDK fallback failed:', sdkError);
+								throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
+							}
+						} else {
+							throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
+						}
+					} else {
+						throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
+					}
+				}
 
 				const blob = await response.blob();
 				const timestamp = Date.now();
