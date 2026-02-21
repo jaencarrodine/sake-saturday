@@ -48,6 +48,7 @@ type GenerateTextResult = {
 
 const HISTORY_WINDOW_HOURS = 12;
 const HISTORY_WINDOW_MS = HISTORY_WINDOW_HOURS * 60 * 60 * 1000;
+const MAX_TOOL_STEPS = 6;
 
 // NOTE: Twilio WhatsApp API does not support typing indicators.
 // If we switch to WhatsApp Cloud API directly, we can send typing indicators via:
@@ -271,7 +272,7 @@ export const processMessage = async (
 		system: systemPrompt,
 		messages,
 		tools: allTools,
-		stopWhen: stepCountIs(10),
+		stopWhen: stepCountIs(MAX_TOOL_STEPS),
 	});
 
 		console.log(JSON.stringify({

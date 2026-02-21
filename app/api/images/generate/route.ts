@@ -2,9 +2,23 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 type ImageType = "bottle_art" | "group_transform" | "profile_pic" | "rank_portrait";
+type GeminiResponsePart = {
+  text?: string;
+  inlineData?: {
+    data?: string;
+    mimeType?: string;
+  };
+  inline_data?: {
+    data?: string;
+    mime_type?: string;
+    mimeType?: string;
+  };
+};
 
 const GEMINI_API_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent";
+
+export const maxDuration = 120;
 
 const BASE_STYLE_PREFIX = `Pixel art, cyberpunk Edo period fusion, neon glow on traditional Japanese elements, dark background with digital rain and glitch effects, 8-bit meets vaporwave, cherry blossom glitch particles, neon kanji accents, cyan and magenta color palette`;
 
@@ -66,6 +80,56 @@ const PROMPTS = {
 const getProfilePicPrompt = (rankKey: string): string => {
   const rankScene = RANK_SCENES[rankKey] || RANK_SCENES.murabito;
   return `${BASE_STYLE_PREFIX}, ${rankScene}, ${getRandomVariations()}`;
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
+
+const getGeneratedImageFromGemini = (
+  geminiData: unknown
+): { data: string; mimeType: string } | null => {
+  if (!isRecord(geminiData)) return null;
+
+  const candidates = Array.isArray(geminiData.candidates)
+    ? geminiData.candidates
+    : [];
+
+  for (const candidate of candidates) {
+    if (!isRecord(candidate)) continue;
+    const content = candidate.content;
+    if (!isRecord(content)) continue;
+    const parts = Array.isArray(content.parts) ? content.parts : [];
+
+    for (const rawPart of parts) {
+      if (!isRecord(rawPart)) continue;
+
+      const part = rawPart as GeminiResponsePart;
+      const inlineData = isRecord(part.inlineData)
+        ? part.inlineData
+        : isRecord(part.inline_data)
+          ? part.inline_data
+          : null;
+
+      if (!inlineData || typeof inlineData.data !== "string") continue;
+
+      const mimeTypeFromInlineData =
+        inlineData.mimeType ||
+        (typeof inlineData.mime_type === "string" ? inlineData.mime_type : undefined) ||
+        "image/jpeg";
+
+      const cleanedData = inlineData.data.replace(/^data:[^;]+;base64,/, "");
+      return { data: cleanedData, mimeType: mimeTypeFromInlineData };
+    }
+  }
+
+  return null;
+};
+
+const getFileExtensionForMimeType = (mimeType: string): string => {
+  if (mimeType.includes("png")) return "png";
+  if (mimeType.includes("webp")) return "webp";
+  if (mimeType.includes("gif")) return "gif";
+  return "jpg";
 };
 
 export async function POST(request: Request) {
@@ -157,14 +221,14 @@ export async function POST(request: Request) {
       }
     }
 
-    const parts: Array<{ text?: string; inline_data?: { mime_type: string; data: string } }> = [
+    const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [
       { text: prompt },
     ];
 
     if (imageData) {
       parts.push({
-        inline_data: {
-          mime_type: mimeType,
+        inlineData: {
+          mimeType,
           data: imageData,
         },
       });
@@ -204,33 +268,40 @@ export async function POST(request: Request) {
       );
     }
 
-    const geminiData = await geminiResponse.json();
+    const geminiData: unknown = await geminiResponse.json();
+    const responseRecord = isRecord(geminiData) ? geminiData : {};
+    const candidates = Array.isArray(responseRecord.candidates)
+      ? responseRecord.candidates
+      : [];
+    const firstCandidate = candidates[0];
+    const firstCandidateContent = isRecord(firstCandidate) ? firstCandidate.content : null;
+    const firstParts = isRecord(firstCandidateContent) && Array.isArray(firstCandidateContent.parts)
+      ? firstCandidateContent.parts
+      : [];
     
     console.log("Gemini API response received:", {
-      hasCandidates: !!geminiData.candidates,
-      candidatesCount: geminiData.candidates?.length || 0,
-      hasContent: !!geminiData.candidates?.[0]?.content,
-      partsCount: geminiData.candidates?.[0]?.content?.parts?.length || 0,
+      hasCandidates: candidates.length > 0,
+      candidatesCount: candidates.length,
+      hasContent: !!firstCandidateContent,
+      partsCount: firstParts.length,
     });
 
-    let generatedImageData: string | null = null;
-    if (
-      geminiData.candidates &&
-      geminiData.candidates[0]?.content?.parts
-    ) {
-      for (const part of geminiData.candidates[0].content.parts) {
-        if (part.inline_data?.data) {
-          generatedImageData = part.inline_data.data;
-          break;
-        }
-      }
-    }
+    const generatedImage = getGeneratedImageFromGemini(geminiData);
+    const generatedImageData = generatedImage?.data || null;
+    const generatedImageMimeType = generatedImage?.mimeType || "image/jpeg";
 
     if (!generatedImageData) {
+      const firstPart = firstParts[0];
+      const firstPartKeys = isRecord(firstPart) ? Object.keys(firstPart) : [];
+      const textPartPreview = isRecord(firstPart) && typeof firstPart.text === "string"
+        ? firstPart.text.substring(0, 200)
+        : null;
+
       console.error("No image data in Gemini response:", {
-        fullResponse: JSON.stringify(geminiData, null, 2),
-        candidates: geminiData.candidates,
-        promptFeedback: geminiData.promptFeedback,
+        candidatesCount: candidates.length,
+        firstPartKeys,
+        textPartPreview,
+        promptFeedback: responseRecord.promptFeedback ?? null,
       });
       return NextResponse.json(
         { error: "No image generated by Gemini", details: geminiData },
@@ -238,18 +309,19 @@ export async function POST(request: Request) {
       );
     }
 
-    const base64Image = `data:image/jpeg;base64,${generatedImageData}`;
+    const base64Image = `data:${generatedImageMimeType};base64,${generatedImageData}`;
 
     const supabase = await createClient();
     const timestamp = Date.now();
     const randomStr = Math.random().toString(36).substring(2, 15);
-    const fileName = `${imageType}-${timestamp}-${randomStr}.jpg`;
+    const extension = getFileExtensionForMimeType(generatedImageMimeType);
+    const fileName = `${imageType}-${timestamp}-${randomStr}.${extension}`;
 
     const blob = await fetch(base64Image).then((r) => r.blob());
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from("tasting-images")
       .upload(fileName, blob, {
-        contentType: "image/jpeg",
+        contentType: generatedImageMimeType,
         cacheControl: "3600",
       });
 
