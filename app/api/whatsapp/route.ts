@@ -3,7 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server';
 import { processMessage } from '@/lib/ai/chat';
 import twilio from 'twilio';
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const ADMIN_NUMBERS = ["whatsapp:+14439941537"];
 

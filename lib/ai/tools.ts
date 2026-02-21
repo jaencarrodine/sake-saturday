@@ -1018,7 +1018,7 @@ export const createTools = (context: ToolContext) => {
 
 	generate_ai_image: tool({
 		description:
-			'Generate AI art using the /api/images/generate endpoint. Can generate bottle art, group transforms, or rank portraits. Saves the generated image URL to the appropriate record.',
+			'Generate AI art using the /api/images/generate endpoint. Can generate bottle art, group transforms, or rank portraits. Saves the generated image URL to the appropriate record. IMPORTANT: Call send_message first to tell the user to wait briefly while the image is being generated.',
 		inputSchema: z.object({
 			type: z.enum(['bottle_art', 'group_transform', 'rank_portrait']).describe('Type of image to generate'),
 			entity_id: z.string().describe('ID of the entity (sake_id for bottle_art, tasting_id for group_transform or rank_portrait)'),
