@@ -122,9 +122,6 @@ export default function TasterPage({ params }: RouteParams) {
 									{!nextRankInfo && totalSakesTasted > 0 && (
 										<div className="mt-3 text-xs neon-pink font-pixel">MAX RANK</div>
 									)}
-									{taster.phone_number && (
-										<div className="text-muted text-sm mt-2">{taster.phone_number}</div>
-									)}
 								</div>
 
 								{averageScore !== null && (

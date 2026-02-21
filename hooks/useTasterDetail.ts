@@ -10,7 +10,7 @@ export function useTasterDetail(tasterId: string) {
       // Get taster details
       const { data: taster, error: tasterError } = await supabase
         .from("tasters")
-        .select("*")
+        .select("id, name, profile_pic, created_at")
         .eq("id", tasterId)
         .single();
       

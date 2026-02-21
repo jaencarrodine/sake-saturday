@@ -221,10 +221,10 @@ ALTER TABLE tastings ADD COLUMN summary JSONB;
 - [x] Tasting images feature merged (PR #8, #10)
 - [x] WhatsApp bot working with Vercel AI SDK
 - [x] Cyberpunk Terminal design direction chosen
-- [ ] Fix tool schemas (inputSchema + stopWhen — agents in progress)
-- [ ] Admin privileges
-- [ ] Multi-message agent flow
-- [ ] Phone linking
+- [x] Fix tool schemas (inputSchema + stopWhen in agent loop)
+- [x] Admin privileges (admin phone gate + admin tool suite + admin prompt addendum)
+- [x] Multi-message agent flow foundation (`send_message` tool supports intermediate WhatsApp messages)
+- [ ] Phone linking (in progress: phone hash migration + taster phone-link resolution wired in code)
 - [ ] Sake research & auto-fill
 - [ ] Rank awareness tools
 - [ ] Post-tasting summaries
