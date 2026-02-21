@@ -236,6 +236,7 @@ export const processMessage = async (
 			twilioClient: twilioClient!,
 			fromNumber: toNumber,
 			toNumber: phoneNumber,
+			currentMediaUrls: mediaUrls || [],
 		};
 		
 		const regularTools = createTools(toolContext);
