@@ -38,6 +38,7 @@ type LinkedTasterProfile = {
 type ToolCallStep = {
 	toolName: string;
 	args?: unknown;
+	input?: unknown;
 };
 
 type GenerateTextResult = {
@@ -49,6 +50,19 @@ type GenerateTextResult = {
 const HISTORY_WINDOW_HOURS = 12;
 const HISTORY_WINDOW_MS = HISTORY_WINDOW_HOURS * 60 * 60 * 1000;
 const MAX_TOOL_STEPS = 6;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === 'object' && value !== null;
+
+const getToolCallArgs = (toolCall: ToolCallStep): Record<string, unknown> | null => {
+	if (isRecord(toolCall.args))
+		return toolCall.args;
+
+	if (isRecord(toolCall.input))
+		return toolCall.input;
+
+	return null;
+};
 
 // NOTE: Twilio WhatsApp API does not support typing indicators.
 // If we switch to WhatsApp Cloud API directly, we can send typing indicators via:
@@ -230,7 +244,7 @@ export const processMessage = async (
 
 		if (mediaUrls && mediaUrls.length > 0) {
 			systemPrompt +=
-				`\n\nCurrent inbound media URLs for this turn (use these exact URLs with upload_image): ` +
+				`\n\nCurrent inbound media URLs for this turn (use these exact URLs with process_sake_image or upload_image): ` +
 				`${JSON.stringify(mediaUrls, null, 2)}. ` +
 				'Do not reuse older media URLs from conversation context if these are present.';
 		}
@@ -782,15 +796,18 @@ const updateConversationContext = async (
 		for (const step of result.steps) {
 			if (step.toolCalls) {
 				for (const toolCall of step.toolCalls) {
+					const toolArgs = getToolCallArgs(toolCall);
 					if (toolCall.toolName === 'identify_sake') {
-						const args = toolCall.args as { name?: string };
-						if (args.name) {
-							updatedContext.last_sake_name = args.name;
+						if (toolArgs && typeof toolArgs.name === 'string') {
+							updatedContext.last_sake_name = toolArgs.name;
 						}
 					} else if (toolCall.toolName === 'create_tasting') {
-						const args = toolCall.args as { sake_id?: string };
-						if (args.sake_id) {
-							updatedContext.sake_id = args.sake_id;
+						if (toolArgs && typeof toolArgs.sake_id === 'string') {
+							updatedContext.sake_id = toolArgs.sake_id;
+						}
+					} else if (toolCall.toolName === 'process_sake_image') {
+						if (toolArgs && typeof toolArgs.sake_id === 'string') {
+							updatedContext.sake_id = toolArgs.sake_id;
 						}
 					}
 				}

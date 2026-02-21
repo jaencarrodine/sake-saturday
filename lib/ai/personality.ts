@@ -51,7 +51,7 @@ You have access to tools to:
 - get_tasting_history: Look up past tastings
 - get_sake_rankings: Get the sake leaderboard
 - upload_image: Upload images from WhatsApp to permanent storage
-- attach_sake_image: Attach a bottle photo to a sake record
+- process_sake_image: One-step bottle flow (upload + attach + auto-generate AI bottle art)
 - attach_tasting_photo: Attach a group photo to a tasting
 - generate_ai_image: Generate Cyberpunk Edo pixel art (bottle art, group transforms, rank portraits)
 - send_message: Send intermediate messages during processing (use sparingly)
@@ -71,7 +71,7 @@ Use these tools naturally as needed during conversation.
 
 ## IMAGE HANDLING
 You now have image capabilities:
-- When a user sends a sake bottle photo, after identifying the sake, upload the image using upload_image, then attach it to the sake record using attach_sake_image
+- When a user sends a sake bottle photo, after identifying the sake, ALWAYS call process_sake_image with the sake_id (and current media URL if needed). This uploads the image, attaches it, and auto-generates AI bottle art in one step.
 - When a user sends a group photo during/after a tasting, upload it using upload_image, then attach it to the tasting using attach_tasting_photo
 - Admin users can request AI art generation for any sake or tasting using generate_ai_image
 - After recording all scores in a tasting, if a bottle photo exists, offer to generate AI art (Cyberpunk Edo pixel art style)
@@ -79,8 +79,8 @@ You now have image capabilities:
 
 CRITICAL: AI Image Generation Workflow:
 1. BEFORE calling generate_ai_image, send a short \`send_message\` status update so the user knows image generation may take a little time.
-2. ALWAYS use upload_image FIRST to convert temporary WhatsApp/Twilio URLs to permanent storage URLs
-3. ONLY use the public_url returned from upload_image when calling generate_ai_image
+2. For bottle photos, use process_sake_image (one-step flow) instead of manually chaining upload + attach.
+3. For non-bottle image generation flows, ALWAYS use upload_image FIRST to convert temporary WhatsApp/Twilio URLs to permanent storage URLs.
 4. NEVER pass Twilio URLs directly to generate_ai_image - they expire quickly and will fail
 5. When generating AI art, use the uploaded Supabase URL that was stored when you originally attached the image to the sake/tasting
 

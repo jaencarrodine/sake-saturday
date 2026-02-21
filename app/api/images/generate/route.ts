@@ -208,7 +208,7 @@ const fetchSourceImage = async (
 
 export async function POST(request: Request) {
   try {
-    const { imageUrl, type, tastingId, tasterId, rankKey } = await request.json();
+    const { imageUrl, type, tastingId, sakeId, tasterId, rankKey } = await request.json();
 
     if (!type) {
       return NextResponse.json(
@@ -226,9 +226,16 @@ export async function POST(request: Request) {
       );
     }
 
-    if ((imageType === "bottle_art" || imageType === "group_transform") && !tastingId) {
+    if (imageType === "group_transform" && !tastingId) {
       return NextResponse.json(
-        { error: "tastingId is required for bottle_art and group_transform types" },
+        { error: "tastingId is required for group_transform type" },
+        { status: 400 }
+      );
+    }
+
+    if (imageType === "bottle_art" && !sakeId && !tastingId) {
+      return NextResponse.json(
+        { error: "sakeId or tastingId is required for bottle_art type" },
         { status: 400 }
       );
     }
@@ -467,6 +474,74 @@ export async function POST(request: Request) {
         return NextResponse.json({
           generatedImageUrl: publicUrl,
           tasterRecord,
+        });
+      }
+
+      if (imageType === "bottle_art") {
+        const warnings: string[] = [];
+        let resolvedSakeId = typeof sakeId === "string" && sakeId.length > 0 ? sakeId : null;
+
+        if (!resolvedSakeId && tastingId) {
+          const { data: tasting, error: tastingLookupError } = await supabase
+            .from("tastings")
+            .select("sake_id")
+            .eq("id", tastingId)
+            .maybeSingle();
+
+          if (tastingLookupError) {
+            console.error("Tasting lookup error while resolving bottle_art sake:", tastingLookupError);
+            warnings.push("Image generated, but could not resolve sake from tasting.");
+          } else if (tasting?.sake_id) {
+            resolvedSakeId = tasting.sake_id;
+          }
+        }
+
+        let sakeRecord: unknown = null;
+        if (resolvedSakeId) {
+          const { data: updatedSake, error: sakeUpdateError } = await supabase
+            .from("sakes")
+            .update({ ai_bottle_image_url: publicUrl })
+            .eq("id", resolvedSakeId)
+            .select()
+            .maybeSingle();
+
+          if (sakeUpdateError) {
+            console.error("Sake update error:", sakeUpdateError);
+            warnings.push("Image generated, but sake record was not updated.");
+          } else {
+            sakeRecord = updatedSake;
+          }
+        } else {
+          warnings.push("Image generated, but no sake ID was available for persistence.");
+        }
+
+        let imageRecord: unknown = null;
+        if (tastingId) {
+          const { data: tastingImageRecord, error: imageRecordError } = await supabase
+            .from("tasting_images")
+            .insert({
+              tasting_id: tastingId,
+              original_image_url: imageUrl && !imageUrl.startsWith("data:") ? imageUrl : null,
+              generated_image_url: publicUrl,
+              image_type: imageType,
+              prompt_used: prompt,
+            })
+            .select()
+            .single();
+
+          if (imageRecordError) {
+            console.error("Database insert error:", imageRecordError);
+            warnings.push("Image generated, but tasting_images record was not saved.");
+          } else {
+            imageRecord = tastingImageRecord;
+          }
+        }
+
+        return NextResponse.json({
+          generatedImageUrl: publicUrl,
+          sakeRecord,
+          imageRecord,
+          warning: warnings.length > 0 ? warnings.join(" ") : undefined,
         });
       }
 

@@ -28,6 +28,237 @@ export const createTools = (context: ToolContext) => {
 	const MAX_IMAGE_GENERATIONS_PER_TURN = 1;
 	const IMAGE_GENERATION_TIMEOUT_MS = 25_000;
 
+	const isTwilioUrl = (url: string): boolean => {
+		try {
+			const hostname = new URL(url).hostname.toLowerCase();
+			return hostname.endsWith('twilio.com') || hostname.endsWith('twiliocdn.com');
+		} catch {
+			return url.includes('twilio.com');
+		}
+	};
+
+	const normalizeCandidateUrl = (url: string): string => {
+		try {
+			const parsed = new URL(url);
+			if (isTwilioUrl(url))
+				parsed.pathname = parsed.pathname.replace(/\.json$/i, '');
+			return parsed.toString();
+		} catch {
+			return url;
+		}
+	};
+
+	const uploadImageFromUrl = async (input: {
+		mediaUrl: string;
+		folderName: string;
+		toolLabel: string;
+	}): Promise<{ publicUrl: string; resolvedDownloadUrl: string }> => {
+		const { mediaUrl, folderName, toolLabel } = input;
+		const supabase = createServiceClient();
+		const accountSid = process.env.TWILIO_ACCOUNT_SID;
+		const authToken = process.env.TWILIO_AUTH_TOKEN;
+		const basicAuth = accountSid && authToken
+			? Buffer.from(`${accountSid}:${authToken}`).toString('base64')
+			: null;
+
+		const fetchMedia = async (url: string): Promise<Response> => {
+			if (isTwilioUrl(url)) {
+				if (!basicAuth)
+					throw new Error('Missing Twilio credentials (TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN)');
+
+				console.log(`[Tool: ${toolLabel}] Detected Twilio URL, using HTTP Basic Auth`);
+				return fetch(url, {
+					headers: {
+						Authorization: `Basic ${basicAuth}`,
+						Accept: '*/*',
+					},
+				});
+			}
+
+			console.log(`[Tool: ${toolLabel}] Non-Twilio URL, fetching directly`);
+			return fetch(url);
+		};
+
+		const logFailedDownload = async (url: string, response: Response): Promise<void> => {
+			const responseBody = await response.text().catch(() => 'Unable to read response body');
+			console.error(`[Tool: ${toolLabel}] Download failed:`, {
+				url,
+				status: response.status,
+				statusText: response.statusText,
+				contentType: response.headers.get('content-type'),
+				body: responseBody.substring(0, 500),
+			});
+		};
+
+		const getRecentInboundMediaUrls = async (): Promise<string[]> => {
+			try {
+				const { data, error } = await supabase
+					.from('whatsapp_messages')
+					.select('media_urls, created_at')
+					.eq('direction', 'inbound')
+					.eq('from_number', toNumber)
+					.not('media_urls', 'is', null)
+					.order('created_at', { ascending: false })
+					.limit(3);
+
+				if (error) {
+					console.error(`[Tool: ${toolLabel}] Failed loading recent inbound media URLs:`, error.message);
+					return [];
+				}
+
+				const recentUrls = (data || []).flatMap(row => row.media_urls || []);
+				console.log(`[Tool: ${toolLabel}] Loaded recent inbound media URL candidates:`, recentUrls.length);
+				return recentUrls;
+			} catch (error) {
+				console.error(`[Tool: ${toolLabel}] Exception loading recent inbound media URLs:`, error);
+				return [];
+			}
+		};
+
+		const fallbackUrls: string[] = [];
+		const fallbackUrlSet = new Set<string>();
+		const primaryUrl = normalizeCandidateUrl(mediaUrl);
+		const addFallbackUrl = (candidateUrl: string, source: string): void => {
+			const normalized = normalizeCandidateUrl(candidateUrl);
+			if (!normalized || normalized === primaryUrl || fallbackUrlSet.has(normalized))
+				return;
+
+			fallbackUrlSet.add(normalized);
+			fallbackUrls.push(normalized);
+			console.log(`[Tool: ${toolLabel}] Added fallback candidate from ${source}:`, normalized);
+		};
+
+		let resolvedDownloadUrl = primaryUrl;
+		let response = await fetchMedia(resolvedDownloadUrl);
+		console.log(`[Tool: ${toolLabel}] Response status:`, response.status, 'Content-Type:', response.headers.get('content-type'));
+
+		if (!response.ok) {
+			await logFailedDownload(resolvedDownloadUrl, response);
+
+			const shouldTryTwilioFallbacks = isTwilioUrl(resolvedDownloadUrl) && response.status === 404;
+			if (!shouldTryTwilioFallbacks)
+				throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
+
+			for (const currentUrl of currentMediaUrls)
+				addFallbackUrl(currentUrl, 'current webhook media');
+
+			const urlMatch = resolvedDownloadUrl.match(/\/Messages\/(MM[^\/]+)\/Media\/(ME[^\/.?]+)/);
+			if (urlMatch) {
+				const [, messageSid, mediaSid] = urlMatch;
+				console.log(`[Tool: ${toolLabel}] Attempting Twilio SDK fallback`);
+				console.log(`[Tool: ${toolLabel}] MessageSid: ${messageSid} MediaSid: ${mediaSid}`);
+
+				try {
+					const mediaInstance = await twilioClient
+						.messages(messageSid)
+						.media(mediaSid)
+						.fetch();
+
+					console.log(`[Tool: ${toolLabel}] Media fetched via SDK, uri:`, mediaInstance.uri);
+					const mediaContentUrl = normalizeCandidateUrl(`https://api.twilio.com${mediaInstance.uri}`);
+					addFallbackUrl(mediaContentUrl, 'twilio sdk');
+				} catch (sdkError) {
+					console.error(`[Tool: ${toolLabel}] SDK fallback lookup failed:`, sdkError);
+				}
+			}
+
+			const recentInboundUrls = await getRecentInboundMediaUrls();
+			for (const recentUrl of recentInboundUrls)
+				addFallbackUrl(recentUrl, 'recent inbound messages');
+
+			const attemptedFallbacks: string[] = [];
+			for (const fallbackUrl of fallbackUrls) {
+				attemptedFallbacks.push(fallbackUrl);
+				const fallbackResponse = await fetchMedia(fallbackUrl);
+				console.log(`[Tool: ${toolLabel}] Fallback response status:`, fallbackResponse.status, 'for', fallbackUrl);
+
+				if (fallbackResponse.ok) {
+					response = fallbackResponse;
+					resolvedDownloadUrl = fallbackUrl;
+					console.log(`[Tool: ${toolLabel}] Fallback succeeded with URL:`, fallbackUrl);
+					break;
+				}
+
+				await logFailedDownload(fallbackUrl, fallbackResponse);
+			}
+
+			if (!response.ok) {
+				throw new Error(
+					`Failed to download image: ${response.status} ${response.statusText}. ` +
+					`Tried ${attemptedFallbacks.length + 1} URL(s)`
+				);
+			}
+		}
+
+		const blob = await response.blob();
+		const timestamp = Date.now();
+		const randomStr = Math.random().toString(36).substring(2, 15);
+		const fileName = `${folderName}/${timestamp}-${randomStr}.jpg`;
+
+		const { data: uploadData, error: uploadError } = await supabase.storage
+			.from(SAKE_IMAGES_BUCKET)
+			.upload(fileName, blob, {
+				contentType: blob.type || 'image/jpeg',
+				cacheControl: '3600',
+			});
+
+		if (uploadError || !uploadData)
+			throw new Error(`Failed to upload image: ${uploadError?.message || 'Unknown error'}`);
+
+		const {
+			data: { publicUrl },
+		} = supabase.storage.from(SAKE_IMAGES_BUCKET).getPublicUrl(uploadData.path);
+
+		return {
+			publicUrl,
+			resolvedDownloadUrl,
+		};
+	};
+
+	const callImageGenerationApi = async (input: {
+		toolLabel: string;
+		requestBody: Record<string, string>;
+	}): Promise<{ generatedImageUrl: string; warning?: string }> => {
+		const { toolLabel, requestBody } = input;
+		const baseUrl = process.env.NEXT_PUBLIC_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://sakesatur.day';
+
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), IMAGE_GENERATION_TIMEOUT_MS);
+
+		let response: Response;
+		try {
+			response = await fetch(`${baseUrl}/api/images/generate`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify(requestBody),
+				signal: controller.signal,
+			});
+		} catch (error) {
+			if (error instanceof Error && error.name === 'AbortError')
+				throw new Error(`Image generation timed out after ${IMAGE_GENERATION_TIMEOUT_MS}ms`);
+			throw error;
+		} finally {
+			clearTimeout(timeout);
+		}
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			console.error(`[Tool: ${toolLabel}] Image generation API error:`, errorText);
+			throw new Error(`Failed to generate image: ${response.statusText}`);
+		}
+
+		const result = await response.json() as { generatedImageUrl?: string; warning?: string };
+		if (!result.generatedImageUrl)
+			throw new Error('No generated image URL in response');
+
+		return {
+			generatedImageUrl: result.generatedImageUrl,
+			warning: result.warning,
+		};
+	};
+
 	return {
 		send_message: tool({
 			description: 'Send an intermediate message to the user in the WhatsApp chat. Use this to acknowledge receipt, provide status updates, or share information before continuing processing. Do NOT use this for your final response.',
@@ -738,190 +969,19 @@ export const createTools = (context: ToolContext) => {
 		}),
 		execute: async ({ media_url, folder }) => {
 			console.log('[Tool: upload_image] Uploading image from:', media_url);
-			const supabase = createServiceClient();
 			const folderName = folder || 'uploads';
 
 			try {
-				const isTwilioUrl = (url: string): boolean => {
-					try {
-						const hostname = new URL(url).hostname.toLowerCase();
-						return hostname.endsWith('twilio.com') || hostname.endsWith('twiliocdn.com');
-					} catch {
-						return url.includes('twilio.com');
-					}
-				};
-
-				const normalizeCandidateUrl = (url: string): string => {
-					try {
-						const parsed = new URL(url);
-						if (isTwilioUrl(url))
-							parsed.pathname = parsed.pathname.replace(/\.json$/i, '');
-						return parsed.toString();
-					} catch {
-						return url;
-					}
-				};
-
-				const accountSid = process.env.TWILIO_ACCOUNT_SID;
-				const authToken = process.env.TWILIO_AUTH_TOKEN;
-				const basicAuth = accountSid && authToken
-					? Buffer.from(`${accountSid}:${authToken}`).toString('base64')
-					: null;
-
-				const fetchMedia = async (url: string): Promise<Response> => {
-					if (isTwilioUrl(url)) {
-						if (!basicAuth)
-							throw new Error('Missing Twilio credentials (TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN)');
-
-						console.log('[Tool: upload_image] Detected Twilio URL, using HTTP Basic Auth');
-						return fetch(url, {
-							headers: {
-								Authorization: `Basic ${basicAuth}`,
-								Accept: '*/*',
-							},
-						});
-					}
-
-					console.log('[Tool: upload_image] Non-Twilio URL, fetching directly');
-					return fetch(url);
-				};
-
-				const logFailedDownload = async (url: string, response: Response): Promise<void> => {
-					const responseBody = await response.text().catch(() => 'Unable to read response body');
-					console.error('[Tool: upload_image] Download failed:', {
-						url,
-						status: response.status,
-						statusText: response.statusText,
-						contentType: response.headers.get('content-type'),
-						body: responseBody.substring(0, 500),
-					});
-				};
-
-				const getRecentInboundMediaUrls = async (): Promise<string[]> => {
-					try {
-						const { data, error } = await supabase
-							.from('whatsapp_messages')
-							.select('media_urls, created_at')
-							.eq('direction', 'inbound')
-							.eq('from_number', toNumber)
-							.not('media_urls', 'is', null)
-							.order('created_at', { ascending: false })
-							.limit(3);
-
-						if (error) {
-							console.error('[Tool: upload_image] Failed loading recent inbound media URLs:', error.message);
-							return [];
-						}
-
-						const recentUrls = (data || []).flatMap(row => row.media_urls || []);
-						console.log('[Tool: upload_image] Loaded recent inbound media URL candidates:', recentUrls.length);
-						return recentUrls;
-					} catch (error) {
-						console.error('[Tool: upload_image] Exception loading recent inbound media URLs:', error);
-						return [];
-					}
-				};
-
-				const fallbackUrls: string[] = [];
-				const fallbackUrlSet = new Set<string>();
-				const primaryUrl = normalizeCandidateUrl(media_url);
-				const addFallbackUrl = (candidateUrl: string, source: string): void => {
-					const normalized = normalizeCandidateUrl(candidateUrl);
-					if (!normalized || normalized === primaryUrl || fallbackUrlSet.has(normalized))
-						return;
-
-					fallbackUrlSet.add(normalized);
-					fallbackUrls.push(normalized);
-					console.log('[Tool: upload_image] Added fallback candidate from', source, ':', normalized);
-				};
-
-				let resolvedDownloadUrl = primaryUrl;
-				let response = await fetchMedia(resolvedDownloadUrl);
-				console.log('[Tool: upload_image] Response status:', response.status, 'Content-Type:', response.headers.get('content-type'));
-
-				if (!response.ok) {
-					await logFailedDownload(resolvedDownloadUrl, response);
-
-					const shouldTryTwilioFallbacks = isTwilioUrl(resolvedDownloadUrl) && response.status === 404;
-					if (!shouldTryTwilioFallbacks)
-						throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
-
-					for (const currentUrl of currentMediaUrls)
-						addFallbackUrl(currentUrl, 'current webhook media');
-
-					const urlMatch = resolvedDownloadUrl.match(/\/Messages\/(MM[^\/]+)\/Media\/(ME[^\/.?]+)/);
-					if (urlMatch) {
-						const [, messageSid, mediaSid] = urlMatch;
-						console.log('[Tool: upload_image] Attempting to fetch media via Twilio SDK as fallback');
-						console.log('[Tool: upload_image] MessageSid:', messageSid, 'MediaSid:', mediaSid);
-
-						try {
-							const mediaInstance = await twilioClient
-								.messages(messageSid)
-								.media(mediaSid)
-								.fetch();
-
-							console.log('[Tool: upload_image] Media fetched via SDK, uri:', mediaInstance.uri);
-							const mediaContentUrl = normalizeCandidateUrl(`https://api.twilio.com${mediaInstance.uri}`);
-							addFallbackUrl(mediaContentUrl, 'twilio sdk');
-						} catch (sdkError) {
-							console.error('[Tool: upload_image] SDK fallback lookup failed:', sdkError);
-						}
-					}
-
-					const recentInboundUrls = await getRecentInboundMediaUrls();
-					for (const recentUrl of recentInboundUrls)
-						addFallbackUrl(recentUrl, 'recent inbound messages');
-
-					const attemptedFallbacks: string[] = [];
-					for (const fallbackUrl of fallbackUrls) {
-						attemptedFallbacks.push(fallbackUrl);
-						const fallbackResponse = await fetchMedia(fallbackUrl);
-						console.log('[Tool: upload_image] Fallback response status:', fallbackResponse.status, 'for', fallbackUrl);
-
-						if (fallbackResponse.ok) {
-							response = fallbackResponse;
-							resolvedDownloadUrl = fallbackUrl;
-							console.log('[Tool: upload_image] Fallback succeeded with URL:', fallbackUrl);
-							break;
-						}
-
-						await logFailedDownload(fallbackUrl, fallbackResponse);
-					}
-
-					if (!response.ok) {
-						throw new Error(
-							`Failed to download image: ${response.status} ${response.statusText}. ` +
-							`Tried ${attemptedFallbacks.length + 1} URL(s)`
-						);
-					}
-				}
-
-				const blob = await response.blob();
-				const timestamp = Date.now();
-				const randomStr = Math.random().toString(36).substring(2, 15);
-				const fileName = `${folderName}/${timestamp}-${randomStr}.jpg`;
-
-				const { data: uploadData, error: uploadError } = await supabase.storage
-					.from(SAKE_IMAGES_BUCKET)
-					.upload(fileName, blob, {
-						contentType: blob.type || 'image/jpeg',
-						cacheControl: '3600',
-					});
-
-				if (uploadError || !uploadData) {
-					console.error('[Tool: upload_image] Upload error:', uploadError);
-					throw new Error(`Failed to upload image: ${uploadError?.message || 'Unknown error'}`);
-				}
-
-				const {
-					data: { publicUrl },
-				} = supabase.storage.from(SAKE_IMAGES_BUCKET).getPublicUrl(uploadData.path);
-
+				const { publicUrl, resolvedDownloadUrl } = await uploadImageFromUrl({
+					mediaUrl: media_url,
+					folderName,
+					toolLabel: 'upload_image',
+				});
 				console.log('[Tool: upload_image] Successfully uploaded to:', publicUrl, 'from source:', resolvedDownloadUrl);
 				return {
 					success: true,
 					public_url: publicUrl,
+					source_url: resolvedDownloadUrl,
 					message: 'Image uploaded successfully',
 				};
 			} catch (error) {
@@ -931,45 +991,89 @@ export const createTools = (context: ToolContext) => {
 		},
 	}),
 
-	attach_sake_image: tool({
+	process_sake_image: tool({
 		description:
-			'Attach an image URL to a sake record (original bottle photo). Updates the sake\'s image_url field.',
+			'One-step bottle image pipeline: upload current image to permanent storage, attach it to the sake record, and auto-generate AI bottle art. Use this for every newly uploaded sake bottle photo.',
 		inputSchema: z.object({
 			sake_id: z.string().describe('ID of the sake to attach the image to'),
-			image_url: z.string().describe('Public URL of the image to attach'),
+			media_url: z.string().optional().describe('Optional media URL override. If omitted, uses the most recent inbound image URL from this turn'),
+			folder: z.string().optional().describe('Optional folder name in the sake-images bucket (default: "bottles")'),
+			generate_ai_art: z.boolean().optional().describe('Generate AI bottle art after upload (default: true)'),
 		}),
-		execute: async ({ sake_id, image_url }) => {
-			console.log('[Tool: attach_sake_image] Attaching image to sake:', sake_id);
+		execute: async ({ sake_id, media_url, folder, generate_ai_art }) => {
+			console.log('[Tool: process_sake_image] Processing image for sake:', sake_id);
+			const selectedMediaUrl = media_url || currentMediaUrls[0];
+			if (!selectedMediaUrl)
+				throw new Error('No media URL available. Use media_url or provide an image in the current user message.');
+
 			const supabase = createServiceClient();
+			const folderName = folder || 'bottles';
+			const shouldGenerateAiArt = generate_ai_art !== false;
 
-			const { data: updatedSakes, error: updateError } = await supabase
+			const { publicUrl, resolvedDownloadUrl } = await uploadImageFromUrl({
+				mediaUrl: selectedMediaUrl,
+				folderName,
+				toolLabel: 'process_sake_image',
+			});
+			console.log('[Tool: process_sake_image] Uploaded image:', publicUrl);
+
+			const { data: attachedSake, error: attachError } = await supabase
 				.from('sakes')
-				.update({ image_url })
+				.update({ image_url: publicUrl })
 				.eq('id', sake_id)
-				.select();
+				.select()
+				.maybeSingle();
 
-			if (updateError) {
-				console.error('[Tool: attach_sake_image] Error:', updateError.message);
-				throw new Error(`Failed to attach image to sake: ${updateError.message}`);
-			}
+			if (attachError)
+				throw new Error(`Failed to attach image to sake: ${attachError.message}`);
 
-			if (!updatedSakes || updatedSakes.length === 0) {
-				console.error('[Tool: attach_sake_image] No sake found with ID:', sake_id);
+			if (!attachedSake)
 				throw new Error(`Sake with ID ${sake_id} not found or update was blocked`);
+
+			let updatedSake = attachedSake;
+			let generatedImageUrl: string | null = null;
+			let warning: string | null = null;
+
+			if (shouldGenerateAiArt) {
+				if (imageGenerationsThisTurn >= MAX_IMAGE_GENERATIONS_PER_TURN) {
+					warning = 'Image generation skipped for this turn to avoid timeout.';
+				} else {
+					imageGenerationsThisTurn += 1;
+					const generationResult = await callImageGenerationApi({
+						toolLabel: 'process_sake_image',
+						requestBody: {
+							type: 'bottle_art',
+							imageUrl: publicUrl,
+							sakeId: sake_id,
+						},
+					});
+
+					generatedImageUrl = generationResult.generatedImageUrl;
+					warning = generationResult.warning || null;
+
+					const { data: aiUpdatedSake, error: aiUpdateError } = await supabase
+						.from('sakes')
+						.update({ ai_bottle_image_url: generatedImageUrl })
+						.eq('id', sake_id)
+						.select()
+						.maybeSingle();
+
+					if (!aiUpdateError && aiUpdatedSake)
+						updatedSake = aiUpdatedSake;
+				}
 			}
 
-			if (updatedSakes.length > 1) {
-				console.error('[Tool: attach_sake_image] Multiple sakes updated, expected one:', updatedSakes.length);
-				throw new Error(`Expected to update one sake, but updated ${updatedSakes.length}`);
-			}
-
-			const updatedSake = updatedSakes[0];
-
-			console.log('[Tool: attach_sake_image] Successfully attached image');
+			console.log('[Tool: process_sake_image] Completed successfully');
 			return {
 				success: true,
 				sake: updatedSake,
-				message: 'Image attached to sake successfully',
+				public_url: publicUrl,
+				source_url: resolvedDownloadUrl,
+				generated_image_url: generatedImageUrl,
+				warning,
+				message: generatedImageUrl
+					? 'Image uploaded, attached, and AI bottle art generated'
+					: 'Image uploaded and attached to sake',
 			};
 		},
 	}),
@@ -1070,19 +1174,21 @@ export const createTools = (context: ToolContext) => {
 			if (image_url && (image_url.includes('twilio.com') || image_url.includes('twiliocdn.com'))) {
 				throw new Error(
 					'Twilio media URLs expire quickly and cannot be used directly. ' +
-					'Please first use the upload_image tool to upload the image to permanent storage, ' +
+					'Please first use process_sake_image (or upload_image for non-bottle flows) to upload the image to permanent storage, ' +
 					'then use the returned public_url with generate_ai_image. ' +
 					'Make sure to use a CURRENT media URL from the most recent message, not from conversation history.'
 				);
 			}
 
 			try {
-				const baseUrl = process.env.NEXT_PUBLIC_URL || process.env.NEXT_PUBLIC_SITE_URL || 'https://sakesatur.day';
 				const requestBody: Record<string, string> = {
 					type: type === 'rank_portrait' ? 'profile_pic' : type,
 				};
 
-				if (type === 'bottle_art' || type === 'group_transform') {
+				if (type === 'bottle_art') {
+					requestBody.imageUrl = image_url!;
+					requestBody.sakeId = entity_id;
+				} else if (type === 'group_transform') {
 					requestBody.imageUrl = image_url!;
 					requestBody.tastingId = entity_id;
 				} else if (type === 'rank_portrait') {
@@ -1090,39 +1196,11 @@ export const createTools = (context: ToolContext) => {
 					requestBody.rankKey = rank_key || 'murabito';
 				}
 
-				const controller = new AbortController();
-				const timeout = setTimeout(() => controller.abort(), IMAGE_GENERATION_TIMEOUT_MS);
-				let response: Response;
-				try {
-					response = await fetch(`${baseUrl}/api/images/generate`, {
-						method: 'POST',
-						headers: {
-							'Content-Type': 'application/json',
-						},
-						body: JSON.stringify(requestBody),
-						signal: controller.signal,
-					});
-				} catch (error) {
-					if (error instanceof Error && error.name === 'AbortError') {
-						throw new Error(`Image generation timed out after ${IMAGE_GENERATION_TIMEOUT_MS}ms`);
-					}
-					throw error;
-				} finally {
-					clearTimeout(timeout);
-				}
-
-				if (!response.ok) {
-					const errorText = await response.text();
-					console.error('[Tool: generate_ai_image] API error:', errorText);
-					throw new Error(`Failed to generate image: ${response.statusText}`);
-				}
-
-				const result = await response.json();
-				const generatedUrl = result.generatedImageUrl;
-
-				if (!generatedUrl) {
-					throw new Error('No generated image URL in response');
-				}
+				const generationResult = await callImageGenerationApi({
+					toolLabel: 'generate_ai_image',
+					requestBody,
+				});
+				const generatedUrl = generationResult.generatedImageUrl;
 
 				if (type === 'bottle_art') {
 					await supabase
@@ -1141,6 +1219,7 @@ export const createTools = (context: ToolContext) => {
 					success: true,
 					generated_image_url: generatedUrl,
 					type,
+					warning: generationResult.warning || null,
 					message: `AI ${type} generated successfully`,
 				};
 			} catch (error) {
