@@ -1,9 +1,9 @@
-import { NextRequest } from 'next/server';
+import { after, NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/server';
 import { processMessage } from '@/lib/ai/chat';
 import twilio from 'twilio';
 
-export const maxDuration = 30;
+export const maxDuration = 300;
 
 const ADMIN_NUMBERS = ["whatsapp:+14439941537"];
 
@@ -18,7 +18,7 @@ const validateEnvVars = () => {
 	};
 
 	const missing = Object.entries(requiredVars)
-		.filter(([_, value]) => !value)
+		.filter(([, value]) => !value)
 		.map(([key]) => key);
 
 	if (missing.length > 0) {
@@ -122,24 +122,33 @@ export const POST = async (req: NextRequest) => {
 			}));
 		}
 		
-		// IMPORTANT: Must await processing before returning response.
-		// On Vercel serverless, the function is killed once the response is sent.
-		// Fire-and-forget does NOT work on serverless.
-		try {
-			const isAdmin = ADMIN_NUMBERS.includes(from);
-			await processAndReply(from, to, body, mediaUrls, requestId, isAdmin);
-		} catch (err) {
-			console.error(JSON.stringify({
-				level: 'error',
-				requestId,
-				message: 'Unhandled error in async processing',
-				error: {
-					message: err instanceof Error ? err.message : String(err),
-					stack: err instanceof Error ? err.stack : undefined,
-				},
-				timestamp: new Date().toISOString(),
-			}));
-		}
+		const isAdmin = ADMIN_NUMBERS.includes(from);
+		after(async () => {
+			try {
+				await processAndReply(from, to, body, mediaUrls, requestId, isAdmin);
+			} catch (err) {
+				console.error(JSON.stringify({
+					level: 'error',
+					requestId,
+					message: 'Unhandled error in deferred processing',
+					error: {
+						message: err instanceof Error ? err.message : String(err),
+						stack: err instanceof Error ? err.stack : undefined,
+					},
+					timestamp: new Date().toISOString(),
+				}));
+			}
+		});
+
+		console.log(JSON.stringify({
+			level: 'info',
+			requestId,
+			message: 'Webhook acknowledged, processing deferred',
+			data: {
+				isAdmin,
+			},
+			timestamp: new Date().toISOString(),
+		}));
 		
 		return new Response('<Response></Response>', {
 			headers: { 'Content-Type': 'text/xml' },

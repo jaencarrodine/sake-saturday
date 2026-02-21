@@ -22,6 +22,10 @@ export const createTools = (context: ToolContext) => {
 		toNumber,
 		currentMediaUrls = [],
 	} = context;
+	const imageGenerationCache = new Map<string, { generated_image_url: string; type: string }>();
+	let imageGenerationsThisTurn = 0;
+	const MAX_IMAGE_GENERATIONS_PER_TURN = 1;
+	const IMAGE_GENERATION_TIMEOUT_MS = 25_000;
 
 	return {
 		send_message: tool({
@@ -1014,7 +1018,7 @@ export const createTools = (context: ToolContext) => {
 
 	generate_ai_image: tool({
 		description:
-			'Generate AI art using the /api/images/generate endpoint. Can generate bottle art, group transforms, or rank portraits. Saves the generated image URL to the appropriate record.',
+			'Generate AI art using the /api/images/generate endpoint. Can generate bottle art, group transforms, or rank portraits. Saves the generated image URL to the appropriate record. IMPORTANT: Call send_message first to tell the user to wait briefly while the image is being generated.',
 		inputSchema: z.object({
 			type: z.enum(['bottle_art', 'group_transform', 'rank_portrait']).describe('Type of image to generate'),
 			entity_id: z.string().describe('ID of the entity (sake_id for bottle_art, tasting_id for group_transform or rank_portrait)'),
@@ -1025,6 +1029,33 @@ export const createTools = (context: ToolContext) => {
 		execute: async ({ type, entity_id, image_url, rank_key, taster_id }) => {
 			console.log('[Tool: generate_ai_image] Generating image:', type, 'for entity:', entity_id);
 			const supabase = createServiceClient();
+			const cacheKey = JSON.stringify({
+				type,
+				entity_id,
+				image_url: image_url || null,
+				rank_key: rank_key || null,
+				taster_id: taster_id || null,
+			});
+			const cachedResult = imageGenerationCache.get(cacheKey);
+			if (cachedResult) {
+				console.log('[Tool: generate_ai_image] Returning cached result for duplicate request');
+				return {
+					success: true,
+					...cachedResult,
+					deduplicated: true,
+					message: 'Reused previously generated image from this turn',
+				};
+			}
+
+			if (imageGenerationsThisTurn >= MAX_IMAGE_GENERATIONS_PER_TURN) {
+				console.warn('[Tool: generate_ai_image] Skipping additional generation to avoid timeout');
+				return {
+					success: false,
+					skipped: true,
+					reason: 'Image generation already executed for this turn. Skipping to avoid function timeout.',
+				};
+			}
+			imageGenerationsThisTurn += 1;
 
 			if ((type === 'bottle_art' || type === 'group_transform') && !image_url) {
 				throw new Error(`image_url is required for ${type}`);
@@ -1058,13 +1089,26 @@ export const createTools = (context: ToolContext) => {
 					requestBody.rankKey = rank_key || 'murabito';
 				}
 
-				const response = await fetch(`${baseUrl}/api/images/generate`, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-					},
-					body: JSON.stringify(requestBody),
-				});
+				const controller = new AbortController();
+				const timeout = setTimeout(() => controller.abort(), IMAGE_GENERATION_TIMEOUT_MS);
+				let response: Response;
+				try {
+					response = await fetch(`${baseUrl}/api/images/generate`, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify(requestBody),
+						signal: controller.signal,
+					});
+				} catch (error) {
+					if (error instanceof Error && error.name === 'AbortError') {
+						throw new Error(`Image generation timed out after ${IMAGE_GENERATION_TIMEOUT_MS}ms`);
+					}
+					throw error;
+				} finally {
+					clearTimeout(timeout);
+				}
 
 				if (!response.ok) {
 					const errorText = await response.text();
@@ -1085,6 +1129,11 @@ export const createTools = (context: ToolContext) => {
 						.update({ ai_bottle_image_url: generatedUrl })
 						.eq('id', entity_id);
 				}
+
+				imageGenerationCache.set(cacheKey, {
+					generated_image_url: generatedUrl,
+					type,
+				});
 
 				console.log('[Tool: generate_ai_image] Successfully generated image:', generatedUrl);
 				return {
