@@ -322,15 +322,6 @@ export async function POST(request: Request) {
 
         const blob = await sourceImageResponse.blob();
         const buffer = await blob.arrayBuffer();
-        
-        const sizeInMB = buffer.byteLength / (1024 * 1024);
-        if (sizeInMB > 20) {
-          return NextResponse.json(
-            { error: `Image too large: ${sizeInMB.toFixed(2)}MB. Maximum size is 20MB.` },
-            { status: 400 }
-          );
-        }
-
         imageData = Buffer.from(buffer).toString("base64");
       }
     }
