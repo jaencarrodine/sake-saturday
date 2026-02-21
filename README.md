@@ -30,6 +30,10 @@ The `/chat` UI now requires a password gate with two access levels:
 
 If `CHAT_UI_SESSION_SECRET` is not set, `NEXTAUTH_SECRET` is used as a fallback.
 
+After unlocking chat, users are prompted for a phone number before sending messages.
+That phone identity links web chat to the same Sake Sensei agent pipeline and context model
+used by WhatsApp.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

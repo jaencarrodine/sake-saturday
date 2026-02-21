@@ -1,66 +1,154 @@
-import { anthropic } from "@ai-sdk/anthropic";
-import { convertToModelMessages, stepCountIs, streamText, type UIMessage } from "ai";
+import {
+	createUIMessageStream,
+	createUIMessageStreamResponse,
+	type UIMessage,
+} from "ai";
 import { NextRequest, NextResponse } from "next/server";
 import type { Twilio } from "twilio";
-import { CLAUDE_MODEL, ADMIN_PROMPT_ADDENDUM } from "@/lib/ai/personality";
-import { createAdminTools, createTools } from "@/lib/ai/tools";
-import { CHAT_ACCESS_COOKIE_NAME, readRoleFromSessionToken } from "@/lib/chat-auth";
+import { processMessage } from "@/lib/ai/chat";
+import { createServiceClient } from "@/lib/supabase/server";
+import {
+	CHAT_ACCESS_COOKIE_NAME,
+	CHAT_IDENTITY_COOKIE_NAME,
+	normalizeChatPhoneNumber,
+	readRoleFromSessionToken,
+} from "@/lib/chat-auth";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
-
-const APP_CHAT_SYSTEM_PROMPT = `You are Sake Sensei, an expert and friendly sake guide inside the Sake Saturday app.
-
-You help users:
-- Learn about sake styles, regions, grades, and tasting notes
-- Identify likely details from bottle photos (label clues, grade, brewery, region)
-- Compare bottles and suggest what to taste next
-
-When users upload a sake image in web chat:
-- Describe what you can see clearly and what is uncertain
-- Avoid claiming details you cannot verify from the image
-- Ask one concise follow-up question if key details are missing
-
-Style:
-- Keep responses concise and useful (usually 2-5 short paragraphs or bullets)
-- Be warm, slightly playful, and practical
-- Use plain language unless the user asks for deeper technical detail
-
-Tools:
-- Use tools when users ask to create tastings, save scores, or look up rankings/history
-- You can create tasting sessions directly in the database for authenticated users
-- In web chat, do not mention WhatsApp-only workflows`;
-
-const APP_CHAT_GENERAL_ROLE_PROMPT = `
-Current user access: GENERAL.
-- You may use regular tools (including create_tasting and record_scores)
-- Do not claim admin powers`;
 
 type ChatRequestBody = {
 	messages?: UIMessage[];
 };
 
-const createWebChatTools = () => {
-	const noOpTwilioClient = {
-		messages: {
-			create: async () => {
-				throw new Error("send_message is unavailable in web chat");
-			},
-		},
-	} as unknown as Twilio;
+const WEB_CHAT_NUMBER = "web-chat";
 
-	const regularTools = createTools({
-		twilioClient: noOpTwilioClient,
-		fromNumber: "web-chat",
-		toNumber: "web-chat",
-		currentMediaUrls: [],
+const webChatTwilioClient = (() => {
+	const messagesLookup = (messageSid: string) => ({
+		media: (mediaSid: string) => ({
+			fetch: async () => ({
+				uri: `/2010-04-01/Accounts/AC_WEBCHAT/Messages/${messageSid}/Media/${mediaSid}.json`,
+			}),
+		}),
 	});
 
-	const { send_message, upload_image, ...webTools } = regularTools;
-	void send_message;
-	void upload_image;
+	const messagesApi = Object.assign(
+		messagesLookup,
+		{
+			create: async () => ({
+				sid: `webchat_${Date.now()}`,
+				status: "sent",
+			}),
+		},
+	);
 
-	return webTools;
+	return {
+		messages: messagesApi,
+	} as unknown as Twilio;
+})();
+
+const extractLatestUserTurn = (
+	messages: UIMessage[],
+): { body: string | null; mediaUrls: string[] | null } | null => {
+	const latestUserMessage = [...messages]
+		.reverse()
+		.find((message) => message.role === "user");
+	if (!latestUserMessage) return null;
+
+	const textParts: string[] = [];
+	const mediaUrls: string[] = [];
+
+	for (const part of latestUserMessage.parts ?? []) {
+		if (
+			part.type === "text" &&
+			typeof part.text === "string" &&
+			part.text.trim().length > 0
+		) {
+			textParts.push(part.text.trim());
+		}
+
+		if (
+			part.type === "file" &&
+			typeof part.url === "string" &&
+			typeof part.mediaType === "string" &&
+			part.mediaType.startsWith("image/")
+		) {
+			mediaUrls.push(part.url);
+		}
+	}
+
+	const body = textParts.join("\n").trim() || null;
+	if (!body && mediaUrls.length === 0) return null;
+
+	return {
+		body,
+		mediaUrls: mediaUrls.length > 0 ? mediaUrls : null,
+	};
+};
+
+const persistWebChatTurn = async (params: {
+	phoneNumber: string;
+	requestId: string;
+	userBody: string | null;
+	userMediaUrls: string[] | null;
+	assistantBody: string;
+}) => {
+	const { phoneNumber, requestId, userBody, userMediaUrls, assistantBody } = params;
+	const supabase = createServiceClient();
+	const timestamp = new Date().toISOString();
+
+	const insertRows = [
+		{
+			direction: "inbound",
+			from_number: phoneNumber,
+			to_number: WEB_CHAT_NUMBER,
+			body: userBody,
+			media_urls: userMediaUrls,
+			twilio_sid: `${requestId}_inbound`,
+			processed: true,
+			processed_at: timestamp,
+		},
+		{
+			direction: "outbound",
+			from_number: WEB_CHAT_NUMBER,
+			to_number: phoneNumber,
+			body: assistantBody,
+			media_urls: null,
+			twilio_sid: `${requestId}_outbound`,
+			processed: true,
+			processed_at: timestamp,
+		},
+	];
+
+	const { error } = await supabase.from("whatsapp_messages").insert(insertRows);
+	if (!error) return;
+
+	console.error("Error persisting web chat messages:", {
+		code: error.code,
+		message: error.message,
+		details: error.details,
+	});
+};
+
+const createSingleMessageStreamResponse = (
+	messages: UIMessage[],
+	assistantMessage: string,
+) => {
+	const stream = createUIMessageStream({
+		originalMessages: messages,
+		execute: ({ writer }) => {
+			const textPartId = "text-1";
+			writer.write({ type: "start" });
+			writer.write({ type: "start-step" });
+			writer.write({ type: "text-start", id: textPartId });
+			writer.write({ type: "text-delta", id: textPartId, delta: assistantMessage });
+			writer.write({ type: "text-end", id: textPartId });
+			writer.write({ type: "finish-step" });
+			writer.write({ type: "finish", finishReason: "stop" });
+		},
+	});
+
+	return createUIMessageStreamResponse({ stream });
 };
 
 export const POST = async (request: NextRequest) => {
@@ -73,11 +161,22 @@ export const POST = async (request: NextRequest) => {
 
 	const accessToken = request.cookies.get(CHAT_ACCESS_COOKIE_NAME)?.value;
 	const accessRole = readRoleFromSessionToken(accessToken);
+	const rawPhoneNumber = request.cookies.get(CHAT_IDENTITY_COOKIE_NAME)?.value;
+	const phoneNumber = rawPhoneNumber
+		? normalizeChatPhoneNumber(rawPhoneNumber)
+		: null;
 
 	if (!accessRole) {
 		return NextResponse.json(
 			{ error: "Chat access password required" },
 			{ status: 401 },
+		);
+	}
+
+	if (!phoneNumber) {
+		return NextResponse.json(
+			{ error: "Phone number required. Identify yourself first." },
+			{ status: 400 },
 		);
 	}
 
@@ -92,34 +191,35 @@ export const POST = async (request: NextRequest) => {
 			);
 		}
 
-		const modelMessages = await convertToModelMessages(
-			messages.map((message) => {
-				const { id, ...rest } = message;
-				void id;
-				return rest;
-			}),
+		const latestUserTurn = extractLatestUserTurn(messages);
+		if (!latestUserTurn) {
+			return NextResponse.json(
+				{ error: "Could not parse latest user message." },
+				{ status: 400 },
+			);
+		}
+
+		const requestId = `webchat_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+		const isAdmin = accessRole === "admin";
+		const assistantMessage = await processMessage(
+			phoneNumber,
+			WEB_CHAT_NUMBER,
+			latestUserTurn.body,
+			latestUserTurn.mediaUrls,
+			requestId,
+			isAdmin,
+			webChatTwilioClient,
 		);
 
-		const regularTools = createWebChatTools();
-		const tools =
-			accessRole === "admin"
-				? { ...regularTools, ...createAdminTools() }
-				: regularTools;
-		const systemPrompt =
-			accessRole === "admin"
-				? `${APP_CHAT_SYSTEM_PROMPT}\n${ADMIN_PROMPT_ADDENDUM}`
-				: `${APP_CHAT_SYSTEM_PROMPT}\n${APP_CHAT_GENERAL_ROLE_PROMPT}`;
-
-		const result = streamText({
-			model: anthropic(CLAUDE_MODEL),
-			system: systemPrompt,
-			messages: modelMessages,
-			tools,
-			stopWhen: stepCountIs(6),
-			temperature: 0.4,
+		await persistWebChatTurn({
+			phoneNumber,
+			requestId,
+			userBody: latestUserTurn.body,
+			userMediaUrls: latestUserTurn.mediaUrls,
+			assistantBody: assistantMessage,
 		});
 
-		return result.toUIMessageStreamResponse();
+		return createSingleMessageStreamResponse(messages, assistantMessage);
 	} catch (error) {
 		console.error("Error in POST /api/chat:", error);
 

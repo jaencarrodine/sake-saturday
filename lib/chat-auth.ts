@@ -2,6 +2,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const CHAT_ACCESS_COOKIE_NAME = "sake-chat-access";
 export const CHAT_ACCESS_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
+export const CHAT_IDENTITY_COOKIE_NAME = "sake-chat-phone";
+export const CHAT_IDENTITY_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
 
 export type ChatAccessRole = "general" | "admin";
 
@@ -116,4 +118,14 @@ export const readRoleFromSessionToken = (
 	} catch {
 		return null;
 	}
+};
+
+export const normalizeChatPhoneNumber = (value: string): string | null => {
+	const trimmedValue = value.trim();
+	if (trimmedValue.length === 0) return null;
+
+	const digitsOnly = trimmedValue.replace(/\D/g, "");
+	if (digitsOnly.length < 7 || digitsOnly.length > 15) return null;
+
+	return `+${digitsOnly}`;
 };

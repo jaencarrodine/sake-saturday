@@ -39,6 +39,11 @@ type AccessResponse = {
 	role?: ChatAccessRole | null;
 	error?: string;
 };
+type IdentityResponse = {
+	identified?: boolean;
+	phoneNumber?: string | null;
+	error?: string;
+};
 
 const isTextPart = (
 	part: MessagePart,
@@ -64,8 +69,10 @@ const toFileList = (files: File[]): FileList => {
 	return dataTransfer.files;
 };
 
-const getMessageStorageKey = (role: ChatAccessRole): string =>
-	`${CHAT_STORAGE_PREFIX}:${role}`;
+const getMessageStorageKey = (
+	role: ChatAccessRole,
+	phoneNumber: string,
+): string => `${CHAT_STORAGE_PREFIX}:${role}:${phoneNumber}`;
 
 const parseStoredMessages = (storedValue: string | null): UIMessage[] => {
 	if (!storedValue) return [];
@@ -79,8 +86,11 @@ const parseStoredMessages = (storedValue: string | null): UIMessage[] => {
 	}
 };
 
-const readStoredMessages = (role: ChatAccessRole): UIMessage[] => {
-	const storageKey = getMessageStorageKey(role);
+const readStoredMessages = (
+	role: ChatAccessRole,
+	phoneNumber: string,
+): UIMessage[] => {
+	const storageKey = getMessageStorageKey(role, phoneNumber);
 
 	try {
 		return parseStoredMessages(window.localStorage.getItem(storageKey));
@@ -89,8 +99,12 @@ const readStoredMessages = (role: ChatAccessRole): UIMessage[] => {
 	}
 };
 
-const persistMessages = (role: ChatAccessRole, messages: UIMessage[]): void => {
-	const storageKey = getMessageStorageKey(role);
+const persistMessages = (
+	role: ChatAccessRole,
+	phoneNumber: string,
+	messages: UIMessage[],
+): void => {
+	const storageKey = getMessageStorageKey(role, phoneNumber);
 	const messagesToStore = messages.slice(-MAX_STORED_MESSAGES);
 
 	try {
@@ -108,9 +122,16 @@ export default function SakeChatUi() {
 	const [authError, setAuthError] = useState<string | null>(null);
 	const [accessRole, setAccessRole] = useState<ChatAccessRole | null>(null);
 	const [isCheckingAccess, setIsCheckingAccess] = useState(true);
+	const [isCheckingIdentity, setIsCheckingIdentity] = useState(false);
+	const [phoneNumberValue, setPhoneNumberValue] = useState("");
+	const [identityPhoneNumber, setIdentityPhoneNumber] = useState<string | null>(null);
+	const [identityError, setIdentityError] = useState<string | null>(null);
+	const [isSavingIdentity, setIsSavingIdentity] = useState(false);
 	const [isUnlocking, setIsUnlocking] = useState(false);
 	const [isLoggingOut, setIsLoggingOut] = useState(false);
-	const [hydratedRole, setHydratedRole] = useState<ChatAccessRole | null>(null);
+	const [hydratedConversationKey, setHydratedConversationKey] = useState<
+		string | null
+	>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
 	const bottomAnchorRef = useRef<HTMLDivElement>(null);
 
@@ -129,8 +150,14 @@ export default function SakeChatUi() {
 
 	const isStreaming = status === "submitted" || status === "streaming";
 	const hasAccess = accessRole !== null;
+	const hasIdentity = identityPhoneNumber !== null;
+	const activeConversationKey =
+		hasAccess && hasIdentity ? `${accessRole}:${identityPhoneNumber}` : null;
 	const isSendDisabled =
-		!hasAccess || isStreaming || (!inputValue.trim() && pendingFiles.length === 0);
+		!hasAccess ||
+		!hasIdentity ||
+		isStreaming ||
+		(!inputValue.trim() && pendingFiles.length === 0);
 	const roleLabel = accessRole === "admin" ? "Admin" : "General";
 
 	const loadAccessState = async () => {
@@ -158,6 +185,31 @@ export default function SakeChatUi() {
 		}
 	};
 
+	const loadIdentityState = async () => {
+		setIsCheckingIdentity(true);
+		setIdentityError(null);
+
+		try {
+			const response = await fetch("/api/chat/identity", {
+				method: "GET",
+				cache: "no-store",
+			});
+
+			if (!response.ok) {
+				setIdentityPhoneNumber(null);
+				return;
+			}
+
+			const payload = (await response.json()) as IdentityResponse;
+			const phoneNumber = payload.identified ? payload.phoneNumber ?? null : null;
+			setIdentityPhoneNumber(phoneNumber);
+		} catch {
+			setIdentityPhoneNumber(null);
+		} finally {
+			setIsCheckingIdentity(false);
+		}
+	};
+
 	useEffect(() => {
 		bottomAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, [messages, status]);
@@ -168,21 +220,47 @@ export default function SakeChatUi() {
 
 	useEffect(() => {
 		if (!accessRole) {
-			setHydratedRole(null);
+			setIdentityPhoneNumber(null);
+			setIdentityError(null);
+			setIsCheckingIdentity(false);
+			setHydratedConversationKey(null);
 			setMessages([]);
 			return;
 		}
 
-		const restoredMessages = readStoredMessages(accessRole);
-		setMessages(restoredMessages);
-		setHydratedRole(accessRole);
+		void loadIdentityState();
 	}, [accessRole, setMessages]);
 
 	useEffect(() => {
-		if (!accessRole || hydratedRole !== accessRole || messages.length === 0) return;
+		if (!accessRole || !identityPhoneNumber) {
+			setHydratedConversationKey(null);
+			setMessages([]);
+			return;
+		}
 
-		persistMessages(accessRole, messages);
-	}, [accessRole, hydratedRole, messages]);
+		const restoredMessages = readStoredMessages(accessRole, identityPhoneNumber);
+		setMessages(restoredMessages);
+		setHydratedConversationKey(`${accessRole}:${identityPhoneNumber}`);
+	}, [accessRole, identityPhoneNumber, setMessages]);
+
+	useEffect(() => {
+		if (
+			!accessRole ||
+			!identityPhoneNumber ||
+			!activeConversationKey ||
+			hydratedConversationKey !== activeConversationKey ||
+			messages.length === 0
+		)
+			return;
+
+		persistMessages(accessRole, identityPhoneNumber, messages);
+	}, [
+		accessRole,
+		identityPhoneNumber,
+		activeConversationKey,
+		hydratedConversationKey,
+		messages,
+	]);
 
 	const removePendingFile = (fileId: string) => {
 		setPendingFiles((currentFiles) =>
@@ -293,14 +371,60 @@ export default function SakeChatUi() {
 		}
 	};
 
+	const handleSavePhoneIdentity = async (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
+
+		if (!phoneNumberValue.trim()) {
+			setIdentityError("Enter your phone number to continue.");
+			return;
+		}
+
+		setIsSavingIdentity(true);
+		setIdentityError(null);
+
+		try {
+			const response = await fetch("/api/chat/identity", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ phoneNumber: phoneNumberValue }),
+			});
+			const payload = (await response.json()) as IdentityResponse;
+
+			if (!response.ok) {
+				setIdentityError(payload.error || "Could not verify phone number.");
+				return;
+			}
+
+			if (!payload.phoneNumber) {
+				setIdentityError("Could not save phone number.");
+				return;
+			}
+
+			setPhoneNumberValue("");
+			setUploadError(null);
+			clearError();
+			setIdentityPhoneNumber(payload.phoneNumber);
+		} catch {
+			setIdentityError("Unable to save phone number. Please try again.");
+		} finally {
+			setIsSavingIdentity(false);
+		}
+	};
+
 	const handleLogout = async () => {
 		if (isStreaming) void stop();
 
 		setIsLoggingOut(true);
 		try {
-			await fetch("/api/chat/access", { method: "DELETE" });
+			await Promise.all([
+				fetch("/api/chat/access", { method: "DELETE" }),
+				fetch("/api/chat/identity", { method: "DELETE" }),
+			]);
 		} finally {
 			setAccessRole(null);
+			setIdentityPhoneNumber(null);
+			setPhoneNumberValue("");
+			setIdentityError(null);
 			setPasswordValue("");
 			setInputValue("");
 			setPendingFiles([]);
@@ -327,6 +451,11 @@ export default function SakeChatUi() {
 								{roleLabel}
 							</div>
 						)}
+						{hasIdentity && (
+							<div className="rounded border border-divider bg-black/40 px-2 py-1 text-xs text-muted">
+								{identityPhoneNumber}
+							</div>
+						)}
 						{hasAccess && (
 							<Button
 								type="button"
@@ -344,7 +473,13 @@ export default function SakeChatUi() {
 							</Button>
 						)}
 						<div className="text-xs uppercase tracking-[0.2em] text-neon-pink">
-							{isStreaming ? "Live" : hasAccess ? "Ready" : "Locked"}
+							{isStreaming
+								? "Live"
+								: !hasAccess
+									? "Locked"
+									: !hasIdentity
+										? "Identify"
+										: "Ready"}
 						</div>
 					</div>
 				</div>
@@ -355,6 +490,13 @@ export default function SakeChatUi() {
 					<div className="flex items-center gap-2">
 						<Loader2 className="h-4 w-4 animate-spin" />
 						Checking chat access...
+					</div>
+				</div>
+			) : hasAccess && isCheckingIdentity ? (
+				<div className="flex h-[55vh] items-center justify-center px-4 py-4 text-sm text-muted">
+					<div className="flex items-center gap-2">
+						<Loader2 className="h-4 w-4 animate-spin" />
+						Checking phone identity...
 					</div>
 				</div>
 			) : !hasAccess ? (
@@ -386,6 +528,36 @@ export default function SakeChatUi() {
 					</form>
 
 					{authError && <p className="text-sm text-red">{authError}</p>}
+				</div>
+			) : !hasIdentity ? (
+				<div className="space-y-4 px-4 py-6">
+					<div className="rounded-lg border border-divider bg-black/30 p-4 text-sm text-muted">
+						<p className="mb-2 text-white">First step: identify with your phone number.</p>
+						<p>
+							This web chat now uses the same Sake Sensei agent pipeline as WhatsApp.
+							Your phone number links your identity and conversation context.
+						</p>
+					</div>
+
+					<form onSubmit={handleSavePhoneIdentity} className="space-y-3">
+						<input
+							type="tel"
+							value={phoneNumberValue}
+							onChange={(event) => setPhoneNumberValue(event.target.value)}
+							placeholder="Enter your phone number (e.g. +1 555 555 5555)"
+							className="h-11 w-full rounded-md border border-divider bg-black/30 px-3 text-sm text-white placeholder:text-muted focus:border-neon-cyan focus:outline-none"
+						/>
+						<Button type="submit" size="sm" disabled={isSavingIdentity}>
+							{isSavingIdentity ? (
+								<Loader2 className="h-4 w-4 animate-spin" />
+							) : (
+								<ShieldCheck className="h-4 w-4" />
+							)}
+							Continue to Chat
+						</Button>
+					</form>
+
+					{identityError && <p className="text-sm text-red">{identityError}</p>}
 				</div>
 			) : (
 				<>
