@@ -20,6 +20,20 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Chat UI password protection
+
+The `/chat` UI now requires a password gate with two access levels:
+
+- `CHAT_UI_GENERAL_PASSWORD`: unlocks general chat access (including tasting creation tools)
+- `CHAT_UI_ADMIN_PASSWORD`: unlocks admin privileges (same elevated tool access as Jaen's number on WhatsApp)
+- `CHAT_UI_SESSION_SECRET`: signing secret for secure chat session cookies
+
+If `CHAT_UI_SESSION_SECRET` is not set, `NEXTAUTH_SECRET` is used as a fallback.
+
+After unlocking chat, users are prompted for a phone number before sending messages.
+That phone identity links web chat to the same Sake Sensei agent pipeline and context model
+used by WhatsApp.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
