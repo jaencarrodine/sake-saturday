@@ -224,6 +224,13 @@ export const processMessage = async (
 				: ''
 		);
 
+		if (mediaUrls && mediaUrls.length > 0) {
+			systemPrompt +=
+				`\n\nCurrent inbound media URLs for this turn (use these exact URLs with upload_image): ` +
+				`${JSON.stringify(mediaUrls, null, 2)}. ` +
+				'Do not reuse older media URLs from conversation context if these are present.';
+		}
+
 		if (linkedTaster) {
 			systemPrompt += `\n\nResolved taster profile from phone hash: ${JSON.stringify(linkedTaster, null, 2)}`;
 		}
