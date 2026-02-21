@@ -46,6 +46,9 @@ type GenerateTextResult = {
 	}>;
 };
 
+const HISTORY_WINDOW_HOURS = 12;
+const HISTORY_WINDOW_MS = HISTORY_WINDOW_HOURS * 60 * 60 * 1000;
+
 // NOTE: Twilio WhatsApp API does not support typing indicators.
 // If we switch to WhatsApp Cloud API directly, we can send typing indicators via:
 // POST /v1/messages { messaging_product: "whatsapp", recipient_type: "individual", to: phone, type: "typing" }
@@ -224,6 +227,13 @@ export const processMessage = async (
 				: ''
 		);
 
+		if (mediaUrls && mediaUrls.length > 0) {
+			systemPrompt +=
+				`\n\nCurrent inbound media URLs for this turn (use these exact URLs with upload_image): ` +
+				`${JSON.stringify(mediaUrls, null, 2)}. ` +
+				'Do not reuse older media URLs from conversation context if these are present.';
+		}
+
 		if (linkedTaster) {
 			systemPrompt += `\n\nResolved taster profile from phone hash: ${JSON.stringify(linkedTaster, null, 2)}`;
 		}
@@ -236,6 +246,7 @@ export const processMessage = async (
 			twilioClient: twilioClient!,
 			fromNumber: toNumber,
 			toNumber: phoneNumber,
+			currentMediaUrls: mediaUrls || [],
 		};
 		
 		const regularTools = createTools(toolContext);
@@ -338,11 +349,14 @@ const getConversationHistory = async (
 	phoneNumber: string
 ): Promise<WhatsAppMessage[]> => {
 	const start = Date.now();
+	const cutoffIso = new Date(Date.now() - HISTORY_WINDOW_MS).toISOString();
 	try {
 		console.log(JSON.stringify({
 			level: 'debug',
 			message: 'Fetching conversation history',
 			phoneNumber,
+			cutoffIso,
+			windowHours: HISTORY_WINDOW_HOURS,
 			timestamp: new Date().toISOString(),
 		}));
 
@@ -351,12 +365,14 @@ const getConversationHistory = async (
 				.from('whatsapp_messages')
 				.select('*')
 				.eq('from_number', phoneNumber)
+				.gte('created_at', cutoffIso)
 				.order('created_at', { ascending: false })
 				.limit(MAX_MESSAGE_HISTORY),
 			supabase
 				.from('whatsapp_messages')
 				.select('*')
 				.eq('to_number', phoneNumber)
+				.gte('created_at', cutoffIso)
 				.order('created_at', { ascending: false })
 				.limit(MAX_MESSAGE_HISTORY)
 		]);
@@ -406,6 +422,8 @@ const getConversationHistory = async (
 			level: 'debug',
 			message: 'Conversation history fetched successfully',
 			count: sortedMessages.length,
+			cutoffIso,
+			windowHours: HISTORY_WINDOW_HOURS,
 			durationMs: Date.now() - start,
 			timestamp: new Date().toISOString(),
 		}));
@@ -433,17 +451,21 @@ const getConversationContext = async (
 	phoneNumber: string
 ): Promise<ConversationContext> => {
 	const start = Date.now();
+	const cutoffIso = new Date(Date.now() - HISTORY_WINDOW_MS).toISOString();
+	const cutoffTime = new Date(cutoffIso).getTime();
 	try {
 		console.log(JSON.stringify({
 			level: 'debug',
 			message: 'Fetching conversation context',
 			phoneNumber,
+			cutoffIso,
+			windowHours: HISTORY_WINDOW_HOURS,
 			timestamp: new Date().toISOString(),
 		}));
 
 		const { data, error } = await supabase
 			.from('conversation_state')
-			.select('context')
+			.select('context, updated_at')
 			.eq('phone_number', phoneNumber)
 			.single();
 
@@ -484,10 +506,27 @@ const getConversationContext = async (
 			return {};
 		}
 
+		const contextUpdatedAt = data.updated_at || null;
+		const contextUpdatedAtMs = contextUpdatedAt ? new Date(contextUpdatedAt).getTime() : NaN;
+		if (!Number.isFinite(contextUpdatedAtMs) || contextUpdatedAtMs < cutoffTime) {
+			console.log(JSON.stringify({
+				level: 'debug',
+				message: 'Conversation context is outside history window; ignoring stale context',
+				phoneNumber,
+				contextUpdatedAt,
+				cutoffIso,
+				windowHours: HISTORY_WINDOW_HOURS,
+				durationMs: Date.now() - start,
+				timestamp: new Date().toISOString(),
+			}));
+			return {};
+		}
+
 		console.log(JSON.stringify({
 			level: 'debug',
 			message: 'Conversation context fetched successfully',
 			phoneNumber,
+			updatedAt: data.updated_at,
 			contextKeys: Object.keys((data.context as ConversationContext) || {}),
 			durationMs: Date.now() - start,
 			timestamp: new Date().toISOString(),
