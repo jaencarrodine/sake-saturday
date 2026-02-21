@@ -1,45 +1,96 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-type ImageType = "bottle_art" | "group_transform";
+type ImageType = "bottle_art" | "group_transform" | "profile_pic";
 
 const GEMINI_API_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent";
 
-const PROMPTS = {
-  bottle_art: `Transform this sake bottle into a stunning ukiyo-e style artwork. 
-    Create a dramatic, painterly Japanese aesthetic with rich colors and traditional Japanese art elements.
-    The bottle should be the central focus, rendered in a classical ukiyo-e woodblock print style with:
-    - Bold outlines and flat color planes characteristic of ukiyo-e
-    - Traditional Japanese decorative patterns and motifs
-    - Atmospheric elements like mist, waves, or cherry blossoms
-    - Dramatic lighting and composition
-    - Keep the bottle recognizable but artistic and stylized
-    - Background should evoke traditional Japanese scenes or abstract patterns`,
+const BASE_STYLE_PREFIX = `Pixel art, cyberpunk Edo period fusion, neon glow on traditional Japanese elements, dark background with digital rain and glitch effects, 8-bit meets vaporwave, cherry blossom glitch particles, neon kanji accents, cyan and magenta color palette`;
 
-  group_transform: `Transform this group photo into an imaginative Japanese-themed scene.
-    Reimagine the people in one of these settings (choose one randomly):
-    - Samurai era: Transform them into samurai, geisha, or merchants in Edo period Japan
-    - Feudal Japan: Traditional kimono-clad figures in a historic Japanese setting
-    - Cyberpunk Tokyo: Futuristic neon-lit Tokyo with traditional Japanese elements
-    - Zen temple: Peaceful temple setting with traditional robes and serene atmosphere
-    - Cherry blossom viewing: Traditional hanami party under blooming sakura trees
-    - Sake brewery: Historical sake brewing setting with traditional workers
-    
-    Maintain the positions and poses of the original people but completely transform:
-    - Their clothing and appearance to match the chosen setting
-    - The background and environment to be immersive and detailed
-    - Add atmospheric details, lighting, and cultural authenticity
-    - Keep it photorealistic but clearly transformed into the Japanese theme`,
+const RANK_SCENES: Record<string, string> = {
+  murabito: `humble rice farmer in a neon-lit village, simple clothes with faint circuit patterns, lantern glow, rain puddles reflecting neon signs`,
+  ashigaru: `foot soldier with bamboo spear and light cyber-armor, training grounds with holographic targets, green neon accents`,
+  ronin: `lone wandering swordsman in rain, tattered cloak with glowing seams, neon-tinted puddle reflections, misty cyberpunk alley`,
+  samurai: `full cyber-armored samurai warrior, holographic katana drawn, cherry blossom glitch storm, castle silhouette with neon windows`,
+  daimyo: `noble lord in ornate robes with circuit-thread embroidery, seated in grand hall with holographic maps, gold and cyan neon`,
+  shogun: `commanding warlord in mech-enhanced yoroi armor, war room with floating tactical displays, red and cyan neon, imposing presence`,
+  tenno: `divine emperor figure on golden throne, radiant with holographic divine light, floating neon kanji orbit, ultimate power, purple and gold neon`,
+};
+
+const VARIATION_WEATHER = [
+  "heavy rain with neon reflections",
+  "light snow with pixel flakes",
+  "thick fog with cyan glow bleeding through",
+  "clear night with pixel stars and a glitch moon",
+  "storm with lightning illuminating the scene",
+  "sakura petal storm (glitched)",
+];
+
+const VARIATION_LIGHTING = [
+  "single neon sign casting hard shadows",
+  "dual-tone lighting (cyan left, magenta right)",
+  "backlit silhouette with rim glow",
+  "overhead fluorescent flicker",
+  "fire/lantern light mixed with neon",
+  "holographic light scatter",
+];
+
+const VARIATION_DETAILS = [
+  "pixel birds/cranes in the background",
+  "floating kanji characters",
+  "holographic wanted posters",
+  "steam rising from a ramen stand",
+  "a pixel cat sitting nearby",
+  "sake bottles lined up on a shelf",
+  "glitch artifacts at the edges",
+];
+
+const getRandomVariations = (count: number = 3): string => {
+  const allVariations = [
+    ...VARIATION_WEATHER,
+    ...VARIATION_LIGHTING,
+    ...VARIATION_DETAILS,
+  ];
+  
+  const shuffled = allVariations.sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count).join(", ");
+};
+
+const PROMPTS = {
+  bottle_art: `${BASE_STYLE_PREFIX}, sake bottle portrait, dramatic lighting, the bottle rendered as a glowing artifact with neon label, circuit-pattern condensation, cyberpunk bar counter setting, ${getRandomVariations()}`,
+
+  group_transform: `${BASE_STYLE_PREFIX}, group portrait reimagined as cyberpunk Edo warriors, each person in rank-appropriate cyber-armor, neon dojo or izakaya setting, sake cups glowing with neon liquid, team portrait composition, ${getRandomVariations()}`,
+};
+
+const getProfilePicPrompt = (rankKey: string): string => {
+  const rankScene = RANK_SCENES[rankKey] || RANK_SCENES.murabito;
+  return `${BASE_STYLE_PREFIX}, ${rankScene}, ${getRandomVariations()}`;
 };
 
 export async function POST(request: Request) {
   try {
-    const { imageUrl, type, tastingId } = await request.json();
+    const { imageUrl, type, tastingId, tasterId, rankKey } = await request.json();
 
-    if (!imageUrl || !type || !tastingId) {
+    if (!type) {
       return NextResponse.json(
-        { error: "Missing required fields: imageUrl, type, or tastingId" },
+        { error: "Missing required field: type" },
+        { status: 400 }
+      );
+    }
+
+    const imageType = type as ImageType;
+    
+    if (imageType === "profile_pic" && !tasterId) {
+      return NextResponse.json(
+        { error: "tasterId is required for profile_pic type" },
+        { status: 400 }
+      );
+    }
+
+    if ((imageType === "bottle_art" || imageType === "group_transform") && !tastingId) {
+      return NextResponse.json(
+        { error: "tastingId is required for bottle_art and group_transform types" },
         { status: 400 }
       );
     }
@@ -52,40 +103,50 @@ export async function POST(request: Request) {
       );
     }
 
-    const imageType = type as ImageType;
-    const prompt = PROMPTS[imageType];
-
-    if (!prompt) {
-      return NextResponse.json(
-        { error: "Invalid image type. Must be bottle_art or group_transform" },
-        { status: 400 }
-      );
+    let prompt: string;
+    if (imageType === "profile_pic") {
+      const resolvedRankKey = rankKey || "murabito";
+      prompt = getProfilePicPrompt(resolvedRankKey);
+    } else {
+      prompt = PROMPTS[imageType];
+      if (!prompt) {
+        return NextResponse.json(
+          { error: "Invalid image type. Must be bottle_art, group_transform, or profile_pic" },
+          { status: 400 }
+        );
+      }
     }
 
-    let imageData: string;
-    if (imageUrl.startsWith("data:")) {
-      imageData = imageUrl.split(",")[1];
-    } else {
-      const response = await fetch(imageUrl);
-      const blob = await response.blob();
-      const buffer = await blob.arrayBuffer();
-      imageData = Buffer.from(buffer).toString("base64");
+    let imageData: string | null = null;
+    
+    if (imageUrl) {
+      if (imageUrl.startsWith("data:")) {
+        imageData = imageUrl.split(",")[1];
+      } else {
+        const response = await fetch(imageUrl);
+        const blob = await response.blob();
+        const buffer = await blob.arrayBuffer();
+        imageData = Buffer.from(buffer).toString("base64");
+      }
+    }
+
+    const parts: Array<{ text?: string; inline_data?: { mime_type: string; data: string } }> = [
+      { text: prompt },
+    ];
+
+    if (imageData) {
+      parts.push({
+        inline_data: {
+          mime_type: "image/jpeg",
+          data: imageData,
+        },
+      });
     }
 
     const requestBody = {
       contents: [
         {
-          parts: [
-            {
-              text: prompt,
-            },
-            {
-              inline_data: {
-                mime_type: "image/jpeg",
-                data: imageData,
-              },
-            },
-          ],
+          parts,
         },
       ],
       generationConfig: {
@@ -162,29 +223,53 @@ export async function POST(request: Request) {
       data: { publicUrl },
     } = supabase.storage.from("tasting-images").getPublicUrl(uploadData.path);
 
-    const { data: imageRecord, error: dbError } = await supabase
-      .from("tasting_images")
-      .insert({
-        tasting_id: tastingId,
-        original_image_url: imageUrl.startsWith("data:") ? null : imageUrl,
-        generated_image_url: publicUrl,
-        image_type: imageType,
-        prompt_used: prompt,
-      })
-      .select()
-      .single();
+    if (imageType === "profile_pic" && tasterId) {
+      const { data: tasterRecord, error: tasterUpdateError } = await supabase
+        .from("tasters")
+        .update({
+          ai_profile_image_url: publicUrl,
+          rank_at_generation: rankKey || "murabito",
+        })
+        .eq("id", tasterId)
+        .select()
+        .single();
 
-    if (dbError) {
-      console.error("Database insert error:", dbError);
-      return NextResponse.json(
-        { generatedImageUrl: publicUrl, warning: "Image generated but not saved to database" }
-      );
+      if (tasterUpdateError) {
+        console.error("Taster update error:", tasterUpdateError);
+        return NextResponse.json(
+          { generatedImageUrl: publicUrl, warning: "Image generated but taster profile not updated" }
+        );
+      }
+
+      return NextResponse.json({
+        generatedImageUrl: publicUrl,
+        tasterRecord,
+      });
+    } else {
+      const { data: imageRecord, error: dbError } = await supabase
+        .from("tasting_images")
+        .insert({
+          tasting_id: tastingId,
+          original_image_url: imageUrl && !imageUrl.startsWith("data:") ? imageUrl : null,
+          generated_image_url: publicUrl,
+          image_type: imageType,
+          prompt_used: prompt,
+        })
+        .select()
+        .single();
+
+      if (dbError) {
+        console.error("Database insert error:", dbError);
+        return NextResponse.json(
+          { generatedImageUrl: publicUrl, warning: "Image generated but not saved to database" }
+        );
+      }
+
+      return NextResponse.json({
+        generatedImageUrl: publicUrl,
+        imageRecord,
+      });
     }
-
-    return NextResponse.json({
-      generatedImageUrl: publicUrl,
-      imageRecord,
-    });
   } catch (error) {
     console.error("Error in image generation:", error);
     return NextResponse.json(

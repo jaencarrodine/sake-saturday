@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { tool } from 'ai';
 import { createServiceClient } from '@/lib/supabase/server';
 import { ensurePhoneLinkForTaster, hashPhoneNumber, resolveTasterByPhone } from '@/lib/phoneHash';
+import { getRank, getNextRank } from '@/lib/tasterRanks';
 import type { Database } from '@/types/supabase/databaseTypes';
 import type { Twilio } from 'twilio';
 
@@ -367,6 +368,333 @@ export const createTools = (context: ToolContext) => {
 			count: data?.length || 0,
 		};
 	},
+	}),
+
+	get_taster_rank: tool({
+		description:
+			'Get a taster\'s current rank, progress toward next rank, and next milestone. Use this when a user asks about their rank or progress.',
+		inputSchema: z.object({
+			taster_id: z.string().describe('ID of the taster to check rank for'),
+		}),
+		execute: async ({ taster_id }) => {
+			console.log('[Tool: get_taster_rank] Executing for taster:', taster_id);
+			const supabase = createServiceClient();
+
+			const { data: taster, error: tasterError } = await supabase
+				.from('tasters')
+				.select('id, name')
+				.eq('id', taster_id)
+				.single();
+
+			if (tasterError || !taster) {
+				console.error('[Tool: get_taster_rank] Error fetching taster:', tasterError?.message);
+				throw new Error(`Failed to find taster: ${tasterError?.message || 'Not found'}`);
+			}
+
+			const { data: scores, error: scoresError } = await supabase
+				.from('scores')
+				.select('tasting_id')
+				.eq('taster_id', taster_id);
+
+			if (scoresError) {
+				console.error('[Tool: get_taster_rank] Error fetching scores:', scoresError.message);
+				throw new Error(`Failed to fetch taster scores: ${scoresError.message}`);
+			}
+
+			const uniqueTastingIds = new Set(scores?.map(s => s.tasting_id) || []);
+			const sakeCount = uniqueTastingIds.size;
+
+			const currentRank = getRank(sakeCount);
+			const nextRankInfo = getNextRank(sakeCount);
+
+			console.log('[Tool: get_taster_rank] Taster:', taster.name, 'Sakes:', sakeCount, 'Rank:', currentRank.romaji);
+
+			return {
+				success: true,
+				taster_name: taster.name,
+				sake_count: sakeCount,
+				current_rank: {
+					key: currentRank.key,
+					kanji: currentRank.kanji,
+					romaji: currentRank.romaji,
+					english: currentRank.english,
+					color: currentRank.color,
+				},
+				next_rank: nextRankInfo ? {
+					rank: {
+						key: nextRankInfo.nextRank.key,
+						kanji: nextRankInfo.nextRank.kanji,
+						romaji: nextRankInfo.nextRank.romaji,
+						english: nextRankInfo.nextRank.english,
+					},
+					progress: Math.round(nextRankInfo.progress * 100),
+					remaining: nextRankInfo.remaining,
+				} : null,
+				is_max_rank: !nextRankInfo,
+			};
+		},
+	}),
+
+	get_tasting_summary: tool({
+		description:
+			'Generate a summary for a completed tasting session, including scores, average, and any rank-ups. Use this after recording scores to create a recap.',
+		inputSchema: z.object({
+			tasting_id: z.string().describe('ID of the tasting session to summarize'),
+		}),
+		execute: async ({ tasting_id }) => {
+			console.log('[Tool: get_tasting_summary] Executing for tasting:', tasting_id);
+			const supabase = createServiceClient();
+
+			const { data: tasting, error: tastingError } = await supabase
+				.from('tastings')
+				.select(`
+					*,
+					sakes:sake_id (id, name, grade, prefecture),
+					scores (
+						score,
+						notes,
+						tasters:taster_id (id, name)
+					)
+				`)
+				.eq('id', tasting_id)
+				.single();
+
+			if (tastingError || !tasting) {
+				console.error('[Tool: get_tasting_summary] Error fetching tasting:', tastingError?.message);
+				throw new Error(`Failed to fetch tasting: ${tastingError?.message || 'Not found'}`);
+			}
+
+			const scores = tasting.scores || [];
+			const tasterScores: Array<{ name: string; score: number; tasterId: string }> = [];
+			
+			for (const scoreData of scores) {
+				const tasterData = scoreData.tasters as unknown as { id: string; name: string } | null;
+				if (tasterData && typeof scoreData.score === 'number') {
+					tasterScores.push({
+						name: tasterData.name,
+						score: scoreData.score,
+						tasterId: tasterData.id,
+					});
+				}
+			}
+
+			const avgScore = tasterScores.length > 0
+				? tasterScores.reduce((sum, t) => sum + t.score, 0) / tasterScores.length
+				: 0;
+
+			const levelUps: Array<{
+				taster_name: string;
+				old_rank: string;
+				new_rank: string;
+				new_rank_kanji: string;
+				sake_count: number;
+			}> = [];
+
+			for (const tasterScore of tasterScores) {
+				const { data: allScores } = await supabase
+					.from('scores')
+					.select('tasting_id')
+					.eq('taster_id', tasterScore.tasterId);
+
+				const uniqueTastingIds = new Set(allScores?.map(s => s.tasting_id) || []);
+				const currentSakeCount = uniqueTastingIds.size;
+				const previousSakeCount = currentSakeCount - 1;
+
+				const currentRank = getRank(currentSakeCount);
+				const previousRank = getRank(previousSakeCount);
+
+				if (currentRank.key !== previousRank.key) {
+					levelUps.push({
+						taster_name: tasterScore.name,
+						old_rank: previousRank.romaji,
+						new_rank: currentRank.romaji,
+						new_rank_kanji: currentRank.kanji,
+						sake_count: currentSakeCount,
+					});
+				}
+			}
+
+			const nextMilestones: Array<{
+				taster_name: string;
+				remaining: number;
+				next_rank: string;
+			}> = [];
+
+			for (const tasterScore of tasterScores) {
+				const { data: allScores } = await supabase
+					.from('scores')
+					.select('tasting_id')
+					.eq('taster_id', tasterScore.tasterId);
+
+				const uniqueTastingIds = new Set(allScores?.map(s => s.tasting_id) || []);
+				const sakeCount = uniqueTastingIds.size;
+				const nextRankInfo = getNextRank(sakeCount);
+
+				if (nextRankInfo) {
+					nextMilestones.push({
+						taster_name: tasterScore.name,
+						remaining: nextRankInfo.remaining,
+						next_rank: nextRankInfo.nextRank.romaji,
+					});
+				}
+			}
+
+			const sakeData = tasting.sakes as unknown as { name: string; grade?: string; prefecture?: string } | null;
+
+			console.log('[Tool: get_tasting_summary] Summary generated:', {
+				scores: tasterScores.length,
+				avgScore,
+				levelUps: levelUps.length,
+			});
+
+			return {
+				success: true,
+				sake_name: sakeData?.name || 'Unknown Sake',
+				sake_grade: sakeData?.grade,
+				sake_prefecture: sakeData?.prefecture,
+				taster_scores: tasterScores,
+				average_score: Math.round(avgScore * 10) / 10,
+				level_ups: levelUps,
+				next_milestones: nextMilestones,
+				tasting_date: tasting.date,
+				location: tasting.location_name,
+			};
+		},
+	}),
+
+	research_sake: tool({
+		description:
+			'Research and retrieve details about a sake. Use this when you need to find information about a sake\'s brewery, prefecture, grade, rice variety, polishing ratio, ABV, SMV, or flavor profile. After calling this tool, use the information returned to auto-fill sake details when creating or updating a sake record. You should then present the researched information to the user for confirmation.',
+		inputSchema: z.object({
+			sake_name: z.string().describe('Name of the sake to research'),
+			known_details: z.object({
+				prefecture: z.string().optional(),
+				grade: z.string().optional(),
+				bottling_company: z.string().optional(),
+			}).optional().describe('Any details already known about the sake (helps narrow down search)'),
+		}),
+		execute: async ({ sake_name, known_details }) => {
+			console.log('[Tool: research_sake] Researching sake:', sake_name, 'with known details:', known_details);
+			const supabase = createServiceClient();
+
+			const { data: existingSakes, error: searchError } = await supabase
+				.from('sakes')
+				.select('*')
+				.ilike('name', `%${sake_name}%`)
+				.limit(3);
+
+			if (searchError) {
+				console.error('[Tool: research_sake] Error searching database:', searchError.message);
+			}
+
+			const databaseResults = existingSakes && existingSakes.length > 0
+				? existingSakes.map(sake => ({
+					id: sake.id,
+					name: sake.name,
+					prefecture: sake.prefecture,
+					grade: sake.grade,
+					type: sake.type,
+					rice: sake.rice,
+					polishing_ratio: sake.polishing_ratio,
+					alc_percentage: sake.alc_percentage,
+					smv: sake.smv,
+					bottling_company: sake.bottling_company,
+				}))
+				: [];
+
+			console.log('[Tool: research_sake] Found', databaseResults.length, 'existing sakes in database');
+
+			return {
+				success: true,
+				sake_name,
+				known_details: known_details || {},
+				database_matches: databaseResults,
+				database_match_count: databaseResults.length,
+				next_step: databaseResults.length > 0
+					? 'Found existing sake(s) in database. Review the matches and ask the user if any match what they are looking for.'
+					: 'No exact matches found in database. Use your knowledge of Japanese sake to provide details about this sake. Look up information about the brewery, prefecture, grade, rice variety, polishing ratio, ABV, SMV, and typical flavor profile. Present the information to the user for confirmation before creating a new sake record.',
+			};
+		},
+	}),
+
+	check_tasting_profiles: tool({
+		description:
+			'Check which tasters in a completed tasting session need profile setup (missing phone link or profile picture). Use this after recording scores to prompt users to set up profiles for their tasting group.',
+		inputSchema: z.object({
+			tasting_id: z.string().describe('ID of the tasting session to check'),
+		}),
+		execute: async ({ tasting_id }) => {
+			console.log('[Tool: check_tasting_profiles] Checking profiles for tasting:', tasting_id);
+			const supabase = createServiceClient();
+
+			const { data: tasting, error: tastingError } = await supabase
+				.from('tastings')
+				.select(`
+					id,
+					scores (
+						tasters:taster_id (
+							id,
+							name,
+							profile_pic
+						)
+					)
+				`)
+				.eq('id', tasting_id)
+				.single();
+
+			if (tastingError || !tasting) {
+				console.error('[Tool: check_tasting_profiles] Error fetching tasting:', tastingError?.message);
+				throw new Error(`Failed to fetch tasting: ${tastingError?.message || 'Not found'}`);
+			}
+
+			const scores = tasting.scores || [];
+			const tasterIds = new Set<string>();
+			const tastersNeedingSetup: Array<{
+				id: string;
+				name: string;
+				has_profile_pic: boolean;
+				has_phone_link: boolean;
+			}> = [];
+
+			for (const scoreData of scores) {
+				const tasterData = scoreData.tasters as unknown as { id: string; name: string; profile_pic: string | null } | null;
+				if (tasterData && !tasterIds.has(tasterData.id)) {
+					tasterIds.add(tasterData.id);
+
+					const { data: phoneLink } = await supabase
+						.from('taster_phone_links')
+						.select('phone_hash')
+						.eq('taster_id', tasterData.id)
+						.maybeSingle();
+
+					const hasPhoneLink = !!phoneLink;
+					const hasProfilePic = !!tasterData.profile_pic;
+
+					if (!hasPhoneLink || !hasProfilePic) {
+						tastersNeedingSetup.push({
+							id: tasterData.id,
+							name: tasterData.name,
+							has_profile_pic: hasProfilePic,
+							has_phone_link: hasPhoneLink,
+						});
+					}
+				}
+			}
+
+			console.log('[Tool: check_tasting_profiles] Found', tastersNeedingSetup.length, 'tasters needing setup');
+
+			return {
+				success: true,
+				tasting_id,
+				total_tasters: tasterIds.size,
+				tasters_needing_setup: tastersNeedingSetup,
+				count_needing_setup: tastersNeedingSetup.length,
+				all_profiles_complete: tastersNeedingSetup.length === 0,
+				suggestion: tastersNeedingSetup.length > 0
+					? 'Ask the user if they want to set up profiles for tasters who are missing phone links or profile pictures. You can help them link phone numbers and generate profile pictures.'
+					: 'All tasters in this session have complete profiles.',
+			};
+		},
 	}),
 	};
 };
