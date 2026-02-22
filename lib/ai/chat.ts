@@ -50,6 +50,7 @@ type GenerateTextResult = {
 const HISTORY_WINDOW_HOURS = 12;
 const HISTORY_WINDOW_MS = HISTORY_WINDOW_HOURS * 60 * 60 * 1000;
 const MAX_TOOL_STEPS = 6;
+const INLINE_IMAGE_DATA_URL_PATTERN = /^data:image\/[a-z0-9.+-]+;base64,/i;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === 'object' && value !== null;
@@ -243,9 +244,11 @@ export const processMessage = async (
 		);
 
 		if (mediaUrls && mediaUrls.length > 0) {
+			const summarizedMediaUrls = summarizeMediaUrlsForPrompt(mediaUrls);
 			systemPrompt +=
-				`\n\nCurrent inbound media URLs for this turn (use these exact URLs with process_sake_image, process_taster_profile_image, process_group_photo_image, or upload_image): ` +
-				`${JSON.stringify(mediaUrls, null, 2)}. ` +
+				`\n\nCurrent inbound media references for this turn (use these references with process_sake_image, process_taster_profile_image, process_group_photo_image, or upload_image): ` +
+				`${JSON.stringify(summarizedMediaUrls, null, 2)}. ` +
+				'If a reference appears as [inline-image-...], call the image-processing tools without media_url so they default to the current turn image. ' +
 				'Do not reuse older media URLs from conversation context if these are present.';
 		}
 
@@ -570,6 +573,22 @@ const replaceTwilioMediaUrls = (text: string): string => {
 	return text.replace(twilioMediaUrlPattern, '[image previously shared]');
 };
 
+const isInlineImageDataUrl = (value: string): boolean =>
+	INLINE_IMAGE_DATA_URL_PATTERN.test(value);
+
+const summarizeMediaUrlForPrompt = (url: string, index: number): string => {
+	if (isInlineImageDataUrl(url)) {
+		const mimeTypeMatch = url.match(/^data:([^;,]+)/i);
+		const mimeType = mimeTypeMatch?.[1] || 'image/*';
+		return `[inline-image-${index + 1}: ${mimeType} data URL omitted (${url.length} chars)]`;
+	}
+
+	return url;
+};
+
+const summarizeMediaUrlsForPrompt = (mediaUrls: string[]): string[] =>
+	mediaUrls.map((url, index) => summarizeMediaUrlForPrompt(url, index));
+
 const buildMessages = async (
 	history: WhatsAppMessage[],
 	currentBody: string | null,
@@ -603,19 +622,34 @@ const buildMessages = async (
 				}
 
 				if (msg.media_urls && msg.media_urls.length > 0) {
-					try {
-						const mediaContents = await processMediaUrls(msg.media_urls);
-						content.push(...mediaContents);
-					} catch (error) {
-						console.error(JSON.stringify({
-							level: 'error',
-							message: 'Failed to process media URLs for history message',
-							error: {
-								message: error instanceof Error ? error.message : String(error),
-								stack: error instanceof Error ? error.stack : undefined,
-							},
-							timestamp: new Date().toISOString(),
-						}));
+					const historyMediaUrls = msg.media_urls.filter(url => !isInlineImageDataUrl(url));
+					const skippedInlineMediaCount = msg.media_urls.length - historyMediaUrls.length;
+
+					if (skippedInlineMediaCount > 0) {
+						const skippedInlineLabel = skippedInlineMediaCount === 1
+							? '1 inline image'
+							: `${skippedInlineMediaCount} inline images`;
+						content.push({
+							type: 'text',
+							text: `[${skippedInlineLabel} from earlier messages omitted to keep context lightweight]`,
+						});
+					}
+
+					if (historyMediaUrls.length > 0) {
+						try {
+							const mediaContents = await processMediaUrls(historyMediaUrls);
+							content.push(...mediaContents);
+						} catch (error) {
+							console.error(JSON.stringify({
+								level: 'error',
+								message: 'Failed to process media URLs for history message',
+								error: {
+									message: error instanceof Error ? error.message : String(error),
+									stack: error instanceof Error ? error.stack : undefined,
+								},
+								timestamp: new Date().toISOString(),
+							}));
+						}
 					}
 				}
 

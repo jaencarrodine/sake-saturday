@@ -6,7 +6,9 @@ import {
 import { NextRequest, NextResponse } from "next/server";
 import type { Twilio } from "twilio";
 import { processMessage } from "@/lib/ai/chat";
+import { normalizeImageBuffer } from "@/lib/images/normalize-image";
 import { createServiceClient } from "@/lib/supabase/server";
+import { SAKE_IMAGES_BUCKET } from "@/lib/supabase/storage";
 import {
 	CHAT_ACCESS_COOKIE_NAME,
 	CHAT_IDENTITY_COOKIE_NAME,
@@ -24,6 +26,8 @@ type ChatRequestBody = {
 const WEB_CHAT_NUMBER = "web-chat";
 const IMAGE_URL_EXTENSION_PATTERN =
 	/\.(jpg|jpeg|png|webp|gif|avif|heic|heif)(?:$|[?#])/i;
+const INLINE_IMAGE_DATA_URL_PATTERN = /^data:image\/[a-z0-9.+-]+;base64,/i;
+const PARSE_DATA_IMAGE_URL_PATTERN = /^data:(image\/[a-z0-9.+-]+);base64,([\s\S]+)$/i;
 
 const webChatTwilioClient = (() => {
 	const messagesLookup = (messageSid: string) => ({
@@ -89,6 +93,105 @@ const extractLatestUserTurn = (
 		body,
 		mediaUrls: mediaUrls.length > 0 ? mediaUrls : null,
 	};
+};
+
+const isInlineImageDataUrl = (url: string): boolean =>
+	INLINE_IMAGE_DATA_URL_PATTERN.test(url);
+
+const uploadInlineImageDataUrl = async (params: {
+	supabase: ReturnType<typeof createServiceClient>;
+	requestId: string;
+	mediaUrl: string;
+	mediaIndex: number;
+}): Promise<string | null> => {
+	const { supabase, requestId, mediaUrl, mediaIndex } = params;
+	const parsedDataUrl = mediaUrl.match(PARSE_DATA_IMAGE_URL_PATTERN);
+	if (!parsedDataUrl)
+		return null;
+
+	const [, contentType, base64Payload] = parsedDataUrl;
+	const imageBuffer = Buffer.from(base64Payload, "base64");
+	if (imageBuffer.length === 0)
+		return null;
+
+	const normalizedImage = await normalizeImageBuffer({
+		buffer: imageBuffer,
+		contentType,
+		fileNameOrUrl: `webchat-inline-${mediaIndex + 1}.${contentType.split("/")[1] || "jpg"}`,
+	});
+	const fileName =
+		`webchat-inline/${requestId}-${mediaIndex + 1}-${Math.random().toString(36).slice(2, 10)}.` +
+		normalizedImage.extension;
+	const { data, error } = await supabase.storage
+		.from(SAKE_IMAGES_BUCKET)
+		.upload(fileName, normalizedImage.buffer, {
+			contentType: normalizedImage.contentType,
+			cacheControl: "3600",
+			upsert: false,
+		});
+
+	if (error || !data)
+		throw new Error(`Failed to upload inline media: ${error?.message || "Unknown upload error"}`);
+
+	const { data: publicUrlData } = supabase.storage
+		.from(SAKE_IMAGES_BUCKET)
+		.getPublicUrl(data.path);
+
+	return publicUrlData.publicUrl;
+};
+
+const resolveLatestUserMediaUrls = async (params: {
+	requestId: string;
+	mediaUrls: string[] | null;
+}): Promise<string[] | null> => {
+	const { requestId, mediaUrls } = params;
+	if (!mediaUrls || mediaUrls.length === 0)
+		return null;
+
+	if (!mediaUrls.some(isInlineImageDataUrl))
+		return mediaUrls;
+
+	const supabase = createServiceClient();
+	const resolvedMediaUrls: string[] = [];
+
+	for (const [index, mediaUrl] of mediaUrls.entries()) {
+		if (!isInlineImageDataUrl(mediaUrl)) {
+			resolvedMediaUrls.push(mediaUrl);
+			continue;
+		}
+
+		try {
+			const uploadedUrl = await uploadInlineImageDataUrl({
+				supabase,
+				requestId,
+				mediaUrl,
+				mediaIndex: index,
+			});
+
+			if (uploadedUrl) {
+				resolvedMediaUrls.push(uploadedUrl);
+				continue;
+			}
+		} catch (error) {
+			console.error("Failed to resolve inline image media URL:", {
+				requestId,
+				mediaIndex: index,
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
+
+		resolvedMediaUrls.push(mediaUrl);
+	}
+
+	return resolvedMediaUrls.length > 0 ? resolvedMediaUrls : null;
+};
+
+const sanitizePersistedMediaUrls = (mediaUrls: string[] | null): string[] | null => {
+	if (!mediaUrls || mediaUrls.length === 0)
+		return null;
+
+	const persistedUrls = mediaUrls.filter((mediaUrl) => !isInlineImageDataUrl(mediaUrl));
+	return persistedUrls.length > 0 ? persistedUrls : null;
 };
 
 const persistWebChatTurn = async (params: {
@@ -205,12 +308,17 @@ export const POST = async (request: NextRequest) => {
 		}
 
 		const requestId = `webchat_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+		const resolvedMediaUrls = await resolveLatestUserMediaUrls({
+			requestId,
+			mediaUrls: latestUserTurn.mediaUrls,
+		});
+		const persistedMediaUrls = sanitizePersistedMediaUrls(resolvedMediaUrls);
 		const isAdmin = accessRole === "admin";
 		const assistantMessage = await processMessage(
 			phoneNumber,
 			WEB_CHAT_NUMBER,
 			latestUserTurn.body,
-			latestUserTurn.mediaUrls,
+			resolvedMediaUrls,
 			requestId,
 			isAdmin,
 			webChatTwilioClient,
@@ -220,7 +328,7 @@ export const POST = async (request: NextRequest) => {
 			phoneNumber,
 			requestId,
 			userBody: latestUserTurn.body,
-			userMediaUrls: latestUserTurn.mediaUrls,
+			userMediaUrls: persistedMediaUrls,
 			assistantBody: assistantMessage,
 		});
 
