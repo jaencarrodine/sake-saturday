@@ -22,6 +22,8 @@ type ChatRequestBody = {
 };
 
 const WEB_CHAT_NUMBER = "web-chat";
+const IMAGE_URL_EXTENSION_PATTERN =
+	/\.(jpg|jpeg|png|webp|gif|avif|heic|heif)(?:$|[?#])/i;
 
 const webChatTwilioClient = (() => {
 	const messagesLookup = (messageSid: string) => ({
@@ -67,14 +69,17 @@ const extractLatestUserTurn = (
 			textParts.push(part.text.trim());
 		}
 
-		if (
-			part.type === "file" &&
-			typeof part.url === "string" &&
-			typeof part.mediaType === "string" &&
-			part.mediaType.startsWith("image/")
-		) {
+		if (part.type !== "file" || typeof part.url !== "string")
+			continue;
+
+		const mediaType = typeof part.mediaType === "string" ? part.mediaType : "";
+		const isImagePart =
+			mediaType.startsWith("image/") ||
+			part.url.startsWith("data:image/") ||
+			IMAGE_URL_EXTENSION_PATTERN.test(part.url);
+
+		if (isImagePart)
 			mediaUrls.push(part.url);
-		}
 	}
 
 	const body = textParts.join("\n").trim() || null;

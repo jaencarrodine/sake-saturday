@@ -16,16 +16,19 @@ import {
 	useEffect,
 	useRef,
 	useState,
+	type ClipboardEvent,
 	type ChangeEvent,
+	type DragEvent,
 	type FormEvent,
 } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 const MAX_FILES_PER_MESSAGE = 4;
-const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 const MAX_STORED_MESSAGES = 60;
 const CHAT_STORAGE_PREFIX = "sake-chat-ui-messages-v1";
+const IMAGE_FILE_EXTENSION_PATTERN =
+	/\.(jpg|jpeg|png|webp|gif|avif|heic|heif)$/i;
 
 type PendingFile = {
 	id: string;
@@ -58,6 +61,9 @@ const formatFileSize = (bytes: number): string => {
 	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 };
+
+const isImageFile = (file: File): boolean =>
+	file.type.startsWith("image/") || IMAGE_FILE_EXTENSION_PATTERN.test(file.name);
 
 const toFileList = (files: File[]): FileList => {
 	const dataTransfer = new DataTransfer();
@@ -129,6 +135,7 @@ export default function SakeChatUi() {
 	const [isSavingIdentity, setIsSavingIdentity] = useState(false);
 	const [isUnlocking, setIsUnlocking] = useState(false);
 	const [isLoggingOut, setIsLoggingOut] = useState(false);
+	const [isDropTargetActive, setIsDropTargetActive] = useState(false);
 	const [hydratedConversationKey, setHydratedConversationKey] = useState<
 		string | null
 	>(null);
@@ -268,30 +275,24 @@ export default function SakeChatUi() {
 		);
 	};
 
-	const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
-		const selectedFiles = Array.from(event.target.files ?? []);
-
-		if (selectedFiles.length === 0) return;
-
+	const addPendingFiles = (selectedFiles: File[]) => {
+		if (selectedFiles.length === 0)
+			return;
 		setUploadError(null);
 		const remainingSlots = MAX_FILES_PER_MESSAGE - pendingFiles.length;
 
 		if (remainingSlots <= 0) {
 			setUploadError(`You can attach up to ${MAX_FILES_PER_MESSAGE} photos per message.`);
-			event.target.value = "";
 			return;
 		}
 
 		const candidateFiles = selectedFiles.slice(0, remainingSlots);
-		const validFiles = candidateFiles.filter(
-			(file) =>
-				file.type.startsWith("image/") && file.size <= MAX_FILE_SIZE_BYTES,
-		);
+		const validFiles = candidateFiles.filter(isImageFile);
 		const skippedCount = selectedFiles.length - validFiles.length;
 
 		if (skippedCount > 0) {
 			setUploadError(
-				"Some files were skipped. Only image files up to 10MB are supported.",
+				"Some files were skipped. Only image files are supported.",
 			);
 		}
 
@@ -302,8 +303,55 @@ export default function SakeChatUi() {
 				file,
 			})),
 		]);
+	};
+
+	const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
+		addPendingFiles(Array.from(event.target.files ?? []));
 
 		event.target.value = "";
+	};
+
+	const handleComposerDragOver = (event: DragEvent<HTMLFormElement>) => {
+		event.preventDefault();
+		if (isStreaming)
+			return;
+
+		event.dataTransfer.dropEffect = "copy";
+		setIsDropTargetActive(true);
+	};
+
+	const handleComposerDragLeave = (event: DragEvent<HTMLFormElement>) => {
+		event.preventDefault();
+		const relatedTarget = event.relatedTarget;
+		if (relatedTarget && event.currentTarget.contains(relatedTarget as Node))
+			return;
+
+		setIsDropTargetActive(false);
+	};
+
+	const handleComposerDrop = (event: DragEvent<HTMLFormElement>) => {
+		event.preventDefault();
+		setIsDropTargetActive(false);
+		if (isStreaming)
+			return;
+
+		addPendingFiles(Array.from(event.dataTransfer.files ?? []));
+	};
+
+	const handleComposerPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+		if (isStreaming)
+			return;
+
+		const pastedFiles = Array.from(event.clipboardData.files ?? []);
+		if (pastedFiles.length === 0)
+			return;
+
+		const imageFiles = pastedFiles.filter(isImageFile);
+		if (imageFiles.length === 0)
+			return;
+
+		event.preventDefault();
+		addPendingFiles(imageFiles);
 	};
 
 	const handleSendMessage = async (event: FormEvent<HTMLFormElement>) => {
@@ -676,10 +724,21 @@ export default function SakeChatUi() {
 							</p>
 						)}
 
-						<form onSubmit={handleSendMessage} className="space-y-3">
+						<form
+							onSubmit={handleSendMessage}
+							onDragOver={handleComposerDragOver}
+							onDragLeave={handleComposerDragLeave}
+							onDrop={handleComposerDrop}
+							className={`space-y-3 rounded-md border p-3 transition-colors ${
+								isDropTargetActive
+									? "border-neon-cyan bg-neon-cyan/5"
+									: "border-divider"
+							}`}
+						>
 							<textarea
 								value={inputValue}
 								onChange={(event) => setInputValue(event.target.value)}
+								onPaste={handleComposerPaste}
 								placeholder="Ask about a sake, tasting notes, or upload a bottle photo..."
 								className="min-h-24 w-full resize-y rounded-md border border-divider bg-black/30 px-3 py-2 text-sm text-white placeholder:text-muted focus:border-neon-cyan focus:outline-none"
 							/>
@@ -689,7 +748,7 @@ export default function SakeChatUi() {
 									<input
 										ref={fileInputRef}
 										type="file"
-										accept="image/*"
+										accept="image/*,.heic,.heif"
 										multiple
 										className="hidden"
 										onChange={handleFileSelect}
@@ -730,6 +789,9 @@ export default function SakeChatUi() {
 									</Button>
 								</div>
 							</div>
+							<p className="text-xs text-muted">
+								Tip: paste images or drag and drop photos into this box.
+							</p>
 						</form>
 					</div>
 				</>
