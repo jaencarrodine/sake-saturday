@@ -29,7 +29,14 @@ const IMAGE_URL_EXTENSION_PATTERN =
 const INLINE_IMAGE_DATA_URL_PATTERN = /^data:image\/[a-z0-9.+-]+;base64,/i;
 const PARSE_DATA_IMAGE_URL_PATTERN = /^data:(image\/[a-z0-9.+-]+);base64,([\s\S]+)$/i;
 
-const webChatTwilioClient = (() => {
+type WebChatTwilioClientConfig = {
+	onMessageCreated?: (messageBody: string) => void | Promise<void>;
+};
+
+const createWebChatTwilioClient = (
+	config: WebChatTwilioClientConfig = {},
+): Twilio => {
+	const { onMessageCreated } = config;
 	const messagesLookup = (messageSid: string) => ({
 		media: (mediaSid: string) => ({
 			fetch: async () => ({
@@ -41,17 +48,23 @@ const webChatTwilioClient = (() => {
 	const messagesApi = Object.assign(
 		messagesLookup,
 		{
-			create: async () => ({
-				sid: `webchat_${Date.now()}`,
-				status: "sent",
-			}),
+			create: async (payload?: { body?: string }) => {
+				const messageBody = payload?.body?.trim();
+				if (messageBody)
+					await onMessageCreated?.(messageBody);
+
+				return {
+					sid: `webchat_${Date.now()}`,
+					status: "sent",
+				};
+			},
 		},
 	);
 
 	return {
 		messages: messagesApi,
 	} as unknown as Twilio;
-})();
+};
 
 const extractLatestUserTurn = (
 	messages: UIMessage[],
@@ -238,21 +251,77 @@ const persistWebChatTurn = async (params: {
 	});
 };
 
-const createSingleMessageStreamResponse = (
-	messages: UIMessage[],
-	assistantMessage: string,
-) => {
+const createStreamingChatResponse = (params: {
+	messages: UIMessage[];
+	phoneNumber: string;
+	requestId: string;
+	userBody: string | null;
+	userMediaUrls: string[] | null;
+	resolvedMediaUrls: string[] | null;
+	isAdmin: boolean;
+}) => {
+	const {
+		messages,
+		phoneNumber,
+		requestId,
+		userBody,
+		userMediaUrls,
+		resolvedMediaUrls,
+		isAdmin,
+	} = params;
 	const stream = createUIMessageStream({
 		originalMessages: messages,
-		execute: ({ writer }) => {
-			const textPartId = "text-1";
+		execute: async ({ writer }) => {
+			let textPartIndex = 0;
+			const writeAssistantMessage = (assistantMessage: string) => {
+				const trimmedMessage = assistantMessage.trim();
+				if (!trimmedMessage)
+					return;
+
+				textPartIndex += 1;
+				const textPartId = `text-${textPartIndex}`;
+				writer.write({ type: "text-start", id: textPartId });
+				writer.write({ type: "text-delta", id: textPartId, delta: trimmedMessage });
+				writer.write({ type: "text-end", id: textPartId });
+			};
 			writer.write({ type: "start" });
 			writer.write({ type: "start-step" });
-			writer.write({ type: "text-start", id: textPartId });
-			writer.write({ type: "text-delta", id: textPartId, delta: assistantMessage });
-			writer.write({ type: "text-end", id: textPartId });
-			writer.write({ type: "finish-step" });
-			writer.write({ type: "finish", finishReason: "stop" });
+
+			try {
+				const webChatTwilioClient = createWebChatTwilioClient({
+					onMessageCreated: (messageBody) => {
+						writeAssistantMessage(messageBody);
+					},
+				});
+				const assistantMessage = await processMessage(
+					phoneNumber,
+					WEB_CHAT_NUMBER,
+					userBody,
+					resolvedMediaUrls,
+					requestId,
+					isAdmin,
+					webChatTwilioClient,
+				);
+
+				await persistWebChatTurn({
+					phoneNumber,
+					requestId,
+					userBody,
+					userMediaUrls,
+					assistantBody: assistantMessage,
+				});
+
+				writeAssistantMessage(assistantMessage);
+				writer.write({ type: "finish-step" });
+				writer.write({ type: "finish", finishReason: "stop" });
+			} catch (error) {
+				console.error("Error while streaming web chat response:", error);
+				writeAssistantMessage(
+					"The sake gods cloud my vision. A technical disturbance in the flow. Try again, perhaps?",
+				);
+				writer.write({ type: "finish-step" });
+				writer.write({ type: "finish", finishReason: "error" });
+			}
 		},
 	});
 
@@ -314,25 +383,15 @@ export const POST = async (request: NextRequest) => {
 		});
 		const persistedMediaUrls = sanitizePersistedMediaUrls(resolvedMediaUrls);
 		const isAdmin = accessRole === "admin";
-		const assistantMessage = await processMessage(
-			phoneNumber,
-			WEB_CHAT_NUMBER,
-			latestUserTurn.body,
-			resolvedMediaUrls,
-			requestId,
-			isAdmin,
-			webChatTwilioClient,
-		);
-
-		await persistWebChatTurn({
+		return createStreamingChatResponse({
+			messages,
 			phoneNumber,
 			requestId,
 			userBody: latestUserTurn.body,
 			userMediaUrls: persistedMediaUrls,
-			assistantBody: assistantMessage,
+			resolvedMediaUrls,
+			isAdmin,
 		});
-
-		return createSingleMessageStreamResponse(messages, assistantMessage);
 	} catch (error) {
 		console.error("Error in POST /api/chat:", error);
 
