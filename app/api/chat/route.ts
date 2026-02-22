@@ -251,36 +251,6 @@ const persistWebChatTurn = async (params: {
 	});
 };
 
-const createStreamingMessageWriter = (writer: {
-	write: (chunk: {
-		type:
-			| "text-start"
-			| "text-delta"
-			| "text-end"
-			| "start"
-			| "start-step"
-			| "finish-step"
-			| "finish";
-		id?: string;
-		delta?: string;
-		finishReason?: "stop" | "length" | "content-filter" | "tool-calls" | "error" | "other";
-	}) => void;
-}) => {
-	let textPartIndex = 0;
-
-	return (assistantMessage: string) => {
-		const trimmedMessage = assistantMessage.trim();
-		if (!trimmedMessage)
-			return;
-
-		textPartIndex += 1;
-		const textPartId = `text-${textPartIndex}`;
-		writer.write({ type: "text-start", id: textPartId });
-		writer.write({ type: "text-delta", id: textPartId, delta: trimmedMessage });
-		writer.write({ type: "text-end", id: textPartId });
-	};
-};
-
 const createStreamingChatResponse = (params: {
 	messages: UIMessage[];
 	phoneNumber: string;
@@ -302,7 +272,18 @@ const createStreamingChatResponse = (params: {
 	const stream = createUIMessageStream({
 		originalMessages: messages,
 		execute: async ({ writer }) => {
-			const writeAssistantMessage = createStreamingMessageWriter(writer);
+			let textPartIndex = 0;
+			const writeAssistantMessage = (assistantMessage: string) => {
+				const trimmedMessage = assistantMessage.trim();
+				if (!trimmedMessage)
+					return;
+
+				textPartIndex += 1;
+				const textPartId = `text-${textPartIndex}`;
+				writer.write({ type: "text-start", id: textPartId });
+				writer.write({ type: "text-delta", id: textPartId, delta: trimmedMessage });
+				writer.write({ type: "text-end", id: textPartId });
+			};
 			writer.write({ type: "start" });
 			writer.write({ type: "start-step" });
 
