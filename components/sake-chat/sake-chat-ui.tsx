@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, type UIMessage } from "ai";
+import { DefaultChatTransport, type FileUIPart, type UIMessage } from "ai";
 import {
 	ImagePlus,
 	Loader2,
@@ -47,6 +47,11 @@ type IdentityResponse = {
 	phoneNumber?: string | null;
 	error?: string;
 };
+type ChatImageUploadResponse = {
+	url?: string;
+	mediaType?: string;
+	error?: string;
+};
 
 const isTextPart = (
 	part: MessagePart,
@@ -65,15 +70,40 @@ const formatFileSize = (bytes: number): string => {
 const isImageFile = (file: File): boolean =>
 	file.type.startsWith("image/") || IMAGE_FILE_EXTENSION_PATTERN.test(file.name);
 
-const toFileList = (files: File[]): FileList => {
-	const dataTransfer = new DataTransfer();
+const uploadChatImageFile = async (file: File): Promise<FileUIPart> => {
+	const formData = new FormData();
+	formData.set("file", file);
+	formData.set("folder", "webchat");
 
-	files.forEach((file) => {
-		dataTransfer.items.add(file);
+	const response = await fetch("/api/chat/upload", {
+		method: "POST",
+		body: formData,
 	});
 
-	return dataTransfer.files;
+	let payload: ChatImageUploadResponse | null = null;
+	try {
+		payload = (await response.json()) as ChatImageUploadResponse;
+	} catch {
+		payload = null;
+	}
+
+	if (!response.ok || !payload?.url) {
+		const fallbackError = response.ok
+			? "Could not upload image."
+			: "Unable to upload image right now.";
+		throw new Error(payload?.error || fallbackError);
+	}
+
+	return {
+		type: "file",
+		url: payload.url,
+		mediaType: payload.mediaType || file.type || "image/jpeg",
+		filename: file.name,
+	};
 };
+
+const uploadChatImageFiles = async (files: File[]): Promise<FileUIPart[]> =>
+	Promise.all(files.map((file) => uploadChatImageFile(file)));
 
 const getMessageStorageKey = (
 	role: ChatAccessRole,
@@ -135,6 +165,7 @@ export default function SakeChatUi() {
 	const [isSavingIdentity, setIsSavingIdentity] = useState(false);
 	const [isUnlocking, setIsUnlocking] = useState(false);
 	const [isLoggingOut, setIsLoggingOut] = useState(false);
+	const [isUploadingFiles, setIsUploadingFiles] = useState(false);
 	const [isDropTargetActive, setIsDropTargetActive] = useState(false);
 	const [hydratedConversationKey, setHydratedConversationKey] = useState<
 		string | null
@@ -156,6 +187,7 @@ export default function SakeChatUi() {
 	});
 
 	const isStreaming = status === "submitted" || status === "streaming";
+	const isBusy = isStreaming || isUploadingFiles;
 	const hasAccess = accessRole !== null;
 	const hasIdentity = identityPhoneNumber !== null;
 	const activeConversationKey =
@@ -163,7 +195,7 @@ export default function SakeChatUi() {
 	const isSendDisabled =
 		!hasAccess ||
 		!hasIdentity ||
-		isStreaming ||
+		isBusy ||
 		(!inputValue.trim() && pendingFiles.length === 0);
 	const roleLabel = accessRole === "admin" ? "Admin" : "General";
 
@@ -313,7 +345,7 @@ export default function SakeChatUi() {
 
 	const handleComposerDragOver = (event: DragEvent<HTMLFormElement>) => {
 		event.preventDefault();
-		if (isStreaming)
+		if (isBusy)
 			return;
 
 		event.dataTransfer.dropEffect = "copy";
@@ -332,14 +364,14 @@ export default function SakeChatUi() {
 	const handleComposerDrop = (event: DragEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		setIsDropTargetActive(false);
-		if (isStreaming)
+		if (isBusy)
 			return;
 
 		addPendingFiles(Array.from(event.dataTransfer.files ?? []));
 	};
 
 	const handleComposerPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-		if (isStreaming)
+		if (isBusy)
 			return;
 
 		const pastedFiles = Array.from(event.clipboardData.files ?? []);
@@ -364,18 +396,26 @@ export default function SakeChatUi() {
 		const files = pendingFiles.map(({ file }) => file);
 
 		try {
-			if (files.length > 0 && text.length > 0) {
-				await sendMessage({ text, files: toFileList(files) });
-			} else if (files.length > 0) {
-				await sendMessage({ files: toFileList(files) });
+			let uploadedFiles: FileUIPart[] = [];
+			if (files.length > 0) {
+				setIsUploadingFiles(true);
+				uploadedFiles = await uploadChatImageFiles(files);
+			}
+			if (uploadedFiles.length > 0 && text.length > 0) {
+				await sendMessage({ text, files: uploadedFiles });
+			} else if (uploadedFiles.length > 0) {
+				await sendMessage({ files: uploadedFiles });
 			} else {
 				await sendMessage({ text });
 			}
 
 			setInputValue("");
 			setPendingFiles([]);
-		} catch {
-			setUploadError("Unable to send message right now. Please try again.");
+		} catch (error) {
+			const fallbackMessage = "Unable to send message right now. Please try again.";
+			setUploadError(error instanceof Error ? error.message || fallbackMessage : fallbackMessage);
+		} finally {
+			setIsUploadingFiles(false);
 		}
 	};
 
@@ -523,6 +563,8 @@ export default function SakeChatUi() {
 						<div className="text-xs uppercase tracking-[0.2em] text-neon-pink">
 							{isStreaming
 								? "Live"
+								: isUploadingFiles
+									? "Uploading"
 								: !hasAccess
 									? "Locked"
 									: !hasIdentity
@@ -690,6 +732,12 @@ export default function SakeChatUi() {
 								Sake Sensei is typing...
 							</div>
 						)}
+						{isUploadingFiles && !isStreaming && (
+							<div className="flex items-center gap-2 text-sm text-neon-cyan">
+								<Loader2 className="h-4 w-4 animate-spin" />
+								Uploading sake photos...
+							</div>
+						)}
 
 						<div ref={bottomAnchorRef} />
 					</div>
@@ -759,7 +807,7 @@ export default function SakeChatUi() {
 										variant="outline"
 										size="sm"
 										onClick={() => fileInputRef.current?.click()}
-										disabled={isStreaming}
+										disabled={isBusy}
 									>
 										<ImagePlus className="h-4 w-4" />
 										Upload sake photo
@@ -780,7 +828,7 @@ export default function SakeChatUi() {
 									)}
 
 									<Button type="submit" size="sm" disabled={isSendDisabled}>
-										{isStreaming ? (
+										{isBusy ? (
 											<Loader2 className="h-4 w-4 animate-spin" />
 										) : (
 											<SendHorizontal className="h-4 w-4" />
