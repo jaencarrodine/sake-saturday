@@ -251,28 +251,96 @@ const persistWebChatTurn = async (params: {
 	});
 };
 
-const createSingleMessageStreamResponse = (
-	messages: UIMessage[],
-	assistantMessages: string[],
-) => {
-	const nonEmptyAssistantMessages = assistantMessages
-		.map((assistantMessage) => assistantMessage.trim())
-		.filter((assistantMessage) => assistantMessage.length > 0);
+const createStreamingMessageWriter = (writer: {
+	write: (chunk: {
+		type:
+			| "text-start"
+			| "text-delta"
+			| "text-end"
+			| "start"
+			| "start-step"
+			| "finish-step"
+			| "finish";
+		id?: string;
+		delta?: string;
+		finishReason?: "stop" | "length" | "content-filter" | "tool-calls" | "error" | "other";
+	}) => void;
+}) => {
+	let textPartIndex = 0;
+
+	return (assistantMessage: string) => {
+		const trimmedMessage = assistantMessage.trim();
+		if (!trimmedMessage)
+			return;
+
+		textPartIndex += 1;
+		const textPartId = `text-${textPartIndex}`;
+		writer.write({ type: "text-start", id: textPartId });
+		writer.write({ type: "text-delta", id: textPartId, delta: trimmedMessage });
+		writer.write({ type: "text-end", id: textPartId });
+	};
+};
+
+const createStreamingChatResponse = (params: {
+	messages: UIMessage[];
+	phoneNumber: string;
+	requestId: string;
+	userBody: string | null;
+	userMediaUrls: string[] | null;
+	resolvedMediaUrls: string[] | null;
+	isAdmin: boolean;
+}) => {
+	const {
+		messages,
+		phoneNumber,
+		requestId,
+		userBody,
+		userMediaUrls,
+		resolvedMediaUrls,
+		isAdmin,
+	} = params;
 	const stream = createUIMessageStream({
 		originalMessages: messages,
-		execute: ({ writer }) => {
+		execute: async ({ writer }) => {
+			const writeAssistantMessage = createStreamingMessageWriter(writer);
 			writer.write({ type: "start" });
 			writer.write({ type: "start-step" });
 
-			nonEmptyAssistantMessages.forEach((assistantMessage, index) => {
-				const textPartId = `text-${index + 1}`;
-				writer.write({ type: "text-start", id: textPartId });
-				writer.write({ type: "text-delta", id: textPartId, delta: assistantMessage });
-				writer.write({ type: "text-end", id: textPartId });
-			});
+			try {
+				const webChatTwilioClient = createWebChatTwilioClient({
+					onMessageCreated: (messageBody) => {
+						writeAssistantMessage(messageBody);
+					},
+				});
+				const assistantMessage = await processMessage(
+					phoneNumber,
+					WEB_CHAT_NUMBER,
+					userBody,
+					resolvedMediaUrls,
+					requestId,
+					isAdmin,
+					webChatTwilioClient,
+				);
 
-			writer.write({ type: "finish-step" });
-			writer.write({ type: "finish", finishReason: "stop" });
+				await persistWebChatTurn({
+					phoneNumber,
+					requestId,
+					userBody,
+					userMediaUrls,
+					assistantBody: assistantMessage,
+				});
+
+				writeAssistantMessage(assistantMessage);
+				writer.write({ type: "finish-step" });
+				writer.write({ type: "finish", finishReason: "stop" });
+			} catch (error) {
+				console.error("Error while streaming web chat response:", error);
+				writeAssistantMessage(
+					"The sake gods cloud my vision. A technical disturbance in the flow. Try again, perhaps?",
+				);
+				writer.write({ type: "finish-step" });
+				writer.write({ type: "finish", finishReason: "error" });
+			}
 		},
 	});
 
@@ -334,34 +402,15 @@ export const POST = async (request: NextRequest) => {
 		});
 		const persistedMediaUrls = sanitizePersistedMediaUrls(resolvedMediaUrls);
 		const isAdmin = accessRole === "admin";
-		const intermediateMessages: string[] = [];
-		const webChatTwilioClient = createWebChatTwilioClient({
-			onMessageCreated: (messageBody) => {
-				intermediateMessages.push(messageBody);
-			},
-		});
-		const assistantMessage = await processMessage(
-			phoneNumber,
-			WEB_CHAT_NUMBER,
-			latestUserTurn.body,
-			resolvedMediaUrls,
-			requestId,
-			isAdmin,
-			webChatTwilioClient,
-		);
-
-		await persistWebChatTurn({
+		return createStreamingChatResponse({
+			messages,
 			phoneNumber,
 			requestId,
 			userBody: latestUserTurn.body,
 			userMediaUrls: persistedMediaUrls,
-			assistantBody: assistantMessage,
+			resolvedMediaUrls,
+			isAdmin,
 		});
-
-		return createSingleMessageStreamResponse(messages, [
-			...intermediateMessages,
-			assistantMessage,
-		]);
 	} catch (error) {
 		console.error("Error in POST /api/chat:", error);
 
